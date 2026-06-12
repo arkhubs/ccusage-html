@@ -51,12 +51,12 @@ The generated dashboard includes:
 - Clickable bars that filter the session browser by date/week/month and, when applicable, by model.
 - A usage curve chart for the selected period and metric.
 - Metric switching for total, input, output, reasoning, cost, cache read, and cache creation.
-- Session card/list toggle with search, sorting, title extraction, token/cost summaries, context token estimates, per-model details, and expandable local Codex full-conversation views.
+- Session card/list toggle with search, sorting, title extraction, token/cost summaries, context token estimates, per-model details, and a right-side drawer with local Codex chat-style full-conversation views.
 - Persistent timestamped archives with normalized data, raw payloads, session records, and manifest metadata.
 - Terminal output and in-report footer metadata exposing the local URL and file locations.
 
 ## Transcript Notes
 
-Transcript enrichment is best for Codex sessions because `ccusage codex session --json` exposes session IDs that map to `~/.codex/sessions/**.jsonl`. The script skips large context/system messages, keeps short user/assistant snippets for cards, and embeds full local conversation turns for expandable details. For non-Codex agents, use `--no-transcript` unless local transcript support is added.
+Transcript enrichment is best for Codex sessions because `ccusage codex session --json` exposes session IDs that map to `~/.codex/sessions/**.jsonl`. The script skips large context/system messages, keeps short user/assistant snippets for cards, and embeds full local conversation turns in the session detail drawer. For non-Codex agents, use `--no-transcript` unless local transcript support is added.
 
 The HTML embeds selected snippets and, for Codex sessions, full local conversation text, so treat the output as private usage data unless the user explicitly wants it shared.

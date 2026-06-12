@@ -11,7 +11,7 @@ This project contains a Codex skill plus a standalone Python generator. The repo
 - Total cost metric alongside token metrics.
 - Clickable legend chips and bar-based session filtering.
 - Usage curve chart.
-- Expandable session card/list views with token type, model breakdown, cost, context token, and Codex full-conversation details when local transcripts are available.
+- Session card/list views with a right-side detail drawer for token type, model breakdown, cost, context token, and Codex chat-style full-conversation details when local transcripts are available.
 - Persistent `reports/<timestamp>/` archives containing the HTML, normalized report data, raw ccusage JSON payloads, session records, and a manifest.
 - Console output that exposes the local URL and generated file/archive paths.
 - Optional local HTTP serving with `--serve`.
@@ -49,7 +49,9 @@ Agent selection mirrors `ccusage`: omit the selector or use `all` for all detect
 
 Project documentation lives in [`docs/wiki/v0.0.1.md`](docs/wiki/v0.0.1.md).
 
-Latest v0.0.4 notes live in [`docs/wiki/v0.0.4.md`](docs/wiki/v0.0.4.md).
+Latest v0.0.5 notes live in [`docs/wiki/v0.0.5.md`](docs/wiki/v0.0.5.md).
+
+v0.0.4 notes live in [`docs/wiki/v0.0.4.md`](docs/wiki/v0.0.4.md).
 
 v0.0.3 notes live in [`docs/wiki/v0.0.3.md`](docs/wiki/v0.0.3.md).
 

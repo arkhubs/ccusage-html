@@ -151,20 +151,40 @@ def html_document(data: dict[str, Any]) -> str:
       gap: 8px;
       flex: 1 1 620px;
     }}
-    .sessions.cards {{
+    .sessions-shell {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-      gap: 16px;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+      gap: 18px;
+      align-items: start;
       margin-top: 14px;
     }}
+    .sessions-main {{ min-width: 0; }}
+    .sessions.cards {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 14px;
+    }}
     .session-card {{
-      border: 1px solid var(--line);
+      position: relative;
+      border: 1px solid #304056;
       border-radius: var(--radius);
-      padding: 18px;
-      background: var(--panel-2);
+      padding: 16px;
+      background: linear-gradient(180deg, rgba(15, 23, 42, .96), rgba(11, 22, 40, .96));
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+      cursor: pointer;
       display: grid;
       gap: 14px;
       min-width: 0;
+      transition: border-color .16s ease, background .16s ease, transform .16s ease;
+    }}
+    .session-card:hover {{
+      border-color: rgba(56, 189, 248, .72);
+      transform: translateY(-1px);
+    }}
+    .session-card.active {{
+      border-color: var(--accent);
+      background: linear-gradient(180deg, rgba(15, 35, 49, .98), rgba(10, 30, 43, .98));
+      box-shadow: 0 0 0 1px rgba(20, 184, 166, .26), 0 18px 44px rgba(0, 0, 0, .28);
     }}
     .session-top {{
       display: flex;
@@ -189,8 +209,14 @@ def html_document(data: dict[str, Any]) -> str:
     .metric-mini .label {{ color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }}
     .metric-mini .value {{ margin-top: 2px; color: var(--strong); font-size: 14px; font-weight: 700; }}
     .meta {{ color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }}
-    .snippets {{ margin-top: 12px; display: grid; gap: 8px; }}
+    .snippets {{
+      display: grid;
+      gap: 8px;
+      border-top: 1px solid rgba(143, 161, 184, .18);
+      padding-top: 12px;
+    }}
     .snippet {{
+      border: 1px solid rgba(20, 184, 166, .18);
       border-left: 3px solid var(--accent);
       background: rgba(20, 184, 166, .08);
       padding: 8px 10px;
@@ -198,57 +224,181 @@ def html_document(data: dict[str, Any]) -> str:
       color: #dce8f5;
       font-size: 13px;
     }}
-    .snippet.assistant {{ border-left-color: var(--accent-2); background: rgba(56, 189, 248, .08); }}
-    .sessions.list {{ display: grid; gap: 8px; }}
-    .sessions.list .session-card {{ grid-template-columns: minmax(280px, 1fr) minmax(320px, .8fr); align-items: start; }}
-    .sessions.list .session-top {{ grid-column: 1 / -1; }}
-    .sessions.list .session-metrics {{ grid-column: 1 / -1; }}
-    .sessions.list .snippets {{ grid-column: 1 / -1; }}
-    .sessions.list .session-detail {{ grid-column: 1 / -1; }}
+    .snippet.assistant {{
+      border-color: rgba(56, 189, 248, .18);
+      border-left-color: var(--accent-2);
+      background: rgba(56, 189, 248, .08);
+    }}
+    .sessions.list {{ display: grid; gap: 10px; }}
+    .sessions.list .session-card {{
+      grid-template-columns: minmax(260px, 1.2fr) minmax(360px, 1fr) auto;
+      align-items: center;
+      gap: 12px 16px;
+      padding: 14px;
+    }}
+    .sessions.list .session-top {{ min-width: 0; }}
+    .sessions.list .session-metrics {{
+      border: 0;
+      border-left: 1px solid rgba(143, 161, 184, .18);
+      border-right: 1px solid rgba(143, 161, 184, .18);
+      padding: 0 14px;
+      grid-template-columns: repeat(3, minmax(84px, 1fr));
+    }}
+    .sessions.list .snippets {{ display: none; }}
     .detail-toggle {{
       justify-self: start;
       min-height: 36px;
     }}
+    .sessions.list .detail-toggle {{ justify-self: end; }}
+    .empty-state {{
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+      color: var(--muted);
+      padding: 24px;
+      text-align: center;
+    }}
+    .session-drawer {{
+      position: sticky;
+      top: 18px;
+      max-height: calc(100vh - 36px);
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid #304056;
+      border-radius: var(--radius);
+      background: #0c1627;
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }}
+    .session-drawer.empty {{
+      display: block;
+      padding: 22px;
+      color: var(--muted);
+    }}
+    .drawer-empty h3 {{ margin: 0 0 8px; color: var(--strong); font-size: 16px; }}
+    .drawer-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(15, 23, 42, .9);
+    }}
+    .drawer-title {{ min-width: 0; }}
+    .drawer-title h3 {{ margin: 0 0 8px; color: var(--strong); font-size: 17px; line-height: 1.35; }}
+    .drawer-close {{
+      flex: 0 0 auto;
+      min-width: 36px;
+      min-height: 36px;
+      padding: 6px 10px;
+    }}
+    .drawer-scroll {{
+      min-height: 0;
+      overflow: auto;
+      padding: 16px;
+    }}
     .session-detail {{
       display: grid;
-      gap: 14px;
-      border-top: 1px solid var(--line);
+      gap: 18px;
+    }}
+    .detail-section {{
+      display: grid;
+      gap: 10px;
+      border-top: 1px solid rgba(143, 161, 184, .18);
       padding-top: 14px;
+    }}
+    .detail-section:first-child {{
+      border-top: 0;
+      padding-top: 0;
+    }}
+    .detail-section h3 {{
+      margin: 0;
+      color: var(--strong);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
     }}
     .detail-grid {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
       gap: 8px;
     }}
-    .model-table {{
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }}
-    .model-table th, .model-table td {{
-      border-bottom: 1px solid var(--line);
-      padding: 8px 6px;
-      text-align: left;
-      vertical-align: top;
-    }}
-    .model-table th {{ color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }}
-    .conversation {{
+    .model-breakdown {{
       display: grid;
       gap: 10px;
-      max-height: 560px;
-      overflow: auto;
-      padding-right: 4px;
+    }}
+    .model-breakdown-row {{
+      border: 1px solid rgba(143, 161, 184, .18);
+      border-radius: var(--radius);
+      padding: 10px;
+      background: rgba(15, 23, 42, .58);
+    }}
+    .model-breakdown-row .name {{
+      color: var(--strong);
+      font-weight: 760;
+      overflow-wrap: anywhere;
+    }}
+    .model-breakdown-row .model-metrics {{
+      grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+      margin-top: 10px;
+    }}
+    .conversation {{
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 2px 2px 6px;
     }}
     .turn {{
-      border: 1px solid var(--line);
-      border-left: 3px solid var(--accent);
-      border-radius: 6px;
-      background: rgba(20, 184, 166, .06);
-      padding: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
     }}
-    .turn.assistant {{ border-left-color: var(--accent-2); background: rgba(56, 189, 248, .06); }}
+    .turn.user {{
+      flex-direction: row-reverse;
+    }}
+    .chat-avatar {{
+      flex: 0 0 28px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(143, 161, 184, .28);
+      color: var(--strong);
+      background: #111827;
+      font-size: 11px;
+      font-weight: 760;
+    }}
+    .turn.user .chat-avatar {{ background: rgba(20, 184, 166, .18); border-color: rgba(20, 184, 166, .38); }}
+    .turn.assistant .chat-avatar {{ background: rgba(56, 189, 248, .16); border-color: rgba(56, 189, 248, .36); }}
+    .chat-bubble {{
+      max-width: min(86%, 680px);
+      border: 1px solid rgba(143, 161, 184, .2);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, .8);
+      padding: 10px 12px;
+    }}
+    .turn.user .chat-bubble {{
+      background: rgba(20, 184, 166, .12);
+      border-color: rgba(20, 184, 166, .28);
+    }}
+    .turn.assistant .chat-bubble {{
+      background: rgba(56, 189, 248, .09);
+      border-color: rgba(56, 189, 248, .24);
+    }}
+    .chat-meta {{
+      color: var(--muted);
+      font-size: 11px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }}
+    .chat-meta b {{ color: var(--strong); }}
+    .turn.user .chat-meta {{ justify-content: flex-end; }}
+    .turn.user .text {{ text-align: left; }}
     .turn .text {{
-      margin-top: 6px;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       color: #dce8f5;
@@ -258,9 +408,23 @@ def html_document(data: dict[str, Any]) -> str:
     .muted {{ color: var(--muted); }}
     .footer-note {{ margin-top: 18px; color: var(--muted); font-size: 12px; }}
     @media (max-width: 960px) {{
-      .summary, .session-controls, .sessions.cards, .sessions.list .session-card {{ grid-template-columns: 1fr; }}
+      .summary, .session-controls, .sessions-shell, .sessions.cards, .sessions.list .session-card {{ grid-template-columns: 1fr; }}
       .session-top {{ display: grid; }}
       .session-id {{ max-width: none; text-align: left; }}
+      .sessions.list .session-metrics {{
+        border-left: 0;
+        border-right: 0;
+        border-top: 1px solid rgba(143, 161, 184, .18);
+        border-bottom: 1px solid rgba(143, 161, 184, .18);
+        padding: 12px 0;
+      }}
+      .sessions.list .detail-toggle {{ justify-self: start; }}
+      .session-drawer {{
+        position: static;
+        max-height: none;
+      }}
+      .drawer-scroll {{ max-height: 70vh; }}
+      .chat-bubble {{ max-width: 92%; }}
       canvas {{ height: 320px; }}
       .chart-wrap {{ min-height: 320px; }}
     }}
@@ -314,8 +478,13 @@ def html_document(data: dict[str, Any]) -> str:
         </div>
         <div class="selection" id="sessionFilter"></div>
         <div class="muted" id="sessionCount"></div>
-        <div id="sessions" class="sessions cards"></div>
-        <div class="load-row"><button id="loadMore">Load more</button></div>
+        <div class="sessions-shell">
+          <div class="sessions-main">
+            <div id="sessions" class="sessions cards"></div>
+            <div class="load-row"><button id="loadMore">Load more</button></div>
+          </div>
+          <aside id="sessionDrawer" class="session-drawer empty" aria-label="Session details"></aside>
+        </div>
         <div class="footer-note" id="archiveNote">Generated as a standalone local HTML file. Embedded snippets may contain private conversation data.</div>
       </div>
     </section>
@@ -334,7 +503,7 @@ def html_document(data: dict[str, Any]) -> str:
       sort: 'recent',
       query: '',
       limit: 80,
-      expanded: new Set()
+      activeSessionKey: null
     }};
     const palette = ['#38bdf8', '#14b8a6', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#f97316', '#0ea5e9', '#10b981'];
     let barHits = [];
@@ -618,29 +787,38 @@ def html_document(data: dict[str, Any]) -> str:
     function modelRows(models) {{
       const entries = Object.entries(models || {{}});
       if (!entries.length) return '<div class="muted">No per-model breakdown available.</div>';
-      return `<table class="model-table">
-        <thead><tr><th>Model</th><th>Total</th><th>Input</th><th>Output</th><th>Reasoning</th><th>Cache</th><th>Context</th><th>Cost</th></tr></thead>
-        <tbody>${entries.map(([name, m]) => `<tr>
-          <td>${esc(name)}</td>
-          <td>${fmt(m.totalTokens)}</td>
-          <td>${fmt(m.inputTokens)}</td>
-          <td>${fmt(m.outputTokens)}</td>
-          <td>${fmt(m.reasoningOutputTokens)}</td>
-          <td>${fmt(Number(m.cacheCreationTokens || 0) + Number(m.cacheReadTokens || 0))}</td>
-          <td>${fmt(m.contextTokens)}</td>
-          <td>${money(m.costUSD)}</td>
-        </tr>`).join('')}</tbody>
-      </table>`;
+      return `<div class="model-breakdown">${entries.map(([name, m]) => `<div class="model-breakdown-row">
+        <div class="name">${esc(name)}</div>
+        <div class="model-metrics">
+          ${[
+            ['Total', fmt(m.totalTokens)],
+            ['Input', fmt(m.inputTokens)],
+            ['Output', fmt(m.outputTokens)],
+            ['Reasoning', fmt(m.reasoningOutputTokens)],
+            ['Cache', fmt(Number(m.cacheCreationTokens || 0) + Number(m.cacheReadTokens || 0))],
+            ['Context', fmt(m.contextTokens)],
+            ['Cost', money(m.costUSD)]
+          ].map(([label, value]) => metricBlock(label, value)).join('')}
+        </div>
+      </div>`).join('')}</div>`;
     }}
     function conversationHtml(s) {{
       const turns = s.conversation || [];
       if (!turns.length) {{
         return '<div class="muted">No full transcript available for this session. Codex sessions include full local conversation when the JSONL file can be located.</div>';
       }}
-      return `<div class="conversation">${turns.map(turn => `<div class="turn ${turn.role === 'assistant' ? 'assistant' : ''}">
-        <div class="meta"><b>${esc(turn.role)}</b><span>${esc(turn.time || '')}</span><span>${fmt(turn.chars)} chars</span></div>
-        <div class="text">${esc(turn.text)}</div>
-      </div>`).join('')}</div>`;
+      return `<div class="conversation">${turns.map(turn => {{
+        const role = turn.role === 'assistant' ? 'assistant' : 'user';
+        const roleLabel = role === 'assistant' ? 'Agent' : 'You';
+        const avatar = role === 'assistant' ? 'AI' : 'You';
+        return `<div class="turn ${role}">
+          <div class="chat-avatar">${avatar}</div>
+          <div class="chat-bubble">
+            <div class="chat-meta"><b>${roleLabel}</b><span>${esc(turn.time || '')}</span><span>${fmt(turn.chars)} chars</span></div>
+            <div class="text">${esc(turn.text)}</div>
+          </div>
+        </div>`;
+      }}).join('')}</div>`;
     }}
     function sessionDetailHtml(s) {{
       const detailMetrics = [
@@ -654,24 +832,41 @@ def html_document(data: dict[str, Any]) -> str:
         ['Generation', fmt(s.generationTokens)],
         ['Cost', money(s.costUSD)]
       ].map(([label, value]) => metricBlock(label, value)).join('');
-      return `<div class="session-detail">
-        <div class="detail-grid">${detailMetrics}</div>
-        <div>
-          <h3>Models</h3>
-          ${modelRows(s.models)}
+      const models = (s.modelNames || []).join(', ') || 'model n/a';
+      return `<div class="drawer-head">
+        <div class="drawer-title">
+          <h3>${esc(s.title || s.sessionId || 'Untitled session')}</h3>
+          <div class="meta">
+            <span>${esc(s.date || '')}</span>
+            <span>${esc(s.agentName || DATA.agent || '')}</span>
+            <span>${esc(models)}</span>
+          </div>
         </div>
-        <div>
-          <h3>Conversation</h3>
-          ${conversationHtml(s)}
+        <button class="drawer-close" aria-label="Close session details">Close</button>
+      </div>
+      <div class="drawer-scroll">
+        <div class="session-detail">
+          <section class="detail-section">
+            <h3>Usage</h3>
+            <div class="detail-grid">${detailMetrics}</div>
+          </section>
+          <section class="detail-section">
+            <h3>Models</h3>
+            ${modelRows(s.models)}
+          </section>
+          <section class="detail-section">
+            <h3>Conversation</h3>
+            ${conversationHtml(s)}
+          </section>
+          ${s.transcriptPath ? `<section class="detail-section"><h3>Transcript</h3><div class="meta session-id">${esc(s.transcriptPath)}</div></section>` : ''}
         </div>
-        ${s.transcriptPath ? `<div class="meta">Transcript: ${esc(s.transcriptPath)}</div>` : ''}
       </div>`;
     }}
     function sessionHtml(s) {{
       const snippets = (s.snippets || []).slice(0, 4).map(sn => `<div class="snippet ${sn.role === 'assistant' ? 'assistant' : ''}"><b>${esc(sn.role)}:</b> ${esc(sn.text)}</div>`).join('');
       const models = (s.modelNames || []).join(', ') || 'model n/a';
       const key = sessionKey(s);
-      const isExpanded = state.expanded.has(key);
+      const isActive = state.activeSessionKey === key;
       const metrics = [
         ['Total', fmt(s.totalTokens)],
         ['Input', fmt(s.inputTokens)],
@@ -680,7 +875,7 @@ def html_document(data: dict[str, Any]) -> str:
         ['Context', fmt(s.contextTokens)],
         ['Cost', money(s.costUSD)]
       ].map(([label, value]) => `<div class="metric-mini"><div class="label">${label}</div><div class="value">${value}</div></div>`).join('');
-      return `<article class="session-card">
+      return `<article class="session-card ${isActive ? 'active' : ''}" data-session-key="${esc(key)}">
         <div class="session-top">
           <div>
             <h3>${esc(s.title || s.sessionId || 'Untitled session')}</h3>
@@ -694,26 +889,57 @@ def html_document(data: dict[str, Any]) -> str:
         </div>
         <div class="session-metrics">${metrics}</div>
         <div class="snippets">${snippets || '<span class="muted">No transcript snippets embedded.</span>'}</div>
-        <button class="detail-toggle" data-session-key="${esc(key)}">${isExpanded ? 'Hide details' : 'Show details'}</button>
-        ${isExpanded ? sessionDetailHtml(s) : ''}
+        <button class="detail-toggle" data-session-key="${esc(key)}">${isActive ? 'Close details' : 'View details'}</button>
       </article>`;
+    }}
+    function renderSessionDrawer(activeSession) {{
+      const drawer = document.getElementById('sessionDrawer');
+      if (!activeSession) {{
+        drawer.classList.add('empty');
+        drawer.innerHTML = `<div class="drawer-empty">
+          <h3>Select a session</h3>
+          <div>Details, model breakdowns, and the full conversation will stay here while the session list remains stable.</div>
+        </div>`;
+        return;
+      }}
+      drawer.classList.remove('empty');
+      drawer.innerHTML = sessionDetailHtml(activeSession);
+      const close = drawer.querySelector('.drawer-close');
+      if (close) close.onclick = () => {{
+        state.activeSessionKey = null;
+        renderSessions();
+      }};
     }}
     function renderSessions() {{
       const sessions = filteredSessions();
+      let activeSession = state.activeSessionKey ? sessions.find(s => sessionKey(s) === state.activeSessionKey) : null;
+      if (state.activeSessionKey && !activeSession) {{
+        state.activeSessionKey = null;
+        activeSession = null;
+      }}
       const count = document.getElementById('sessionCount');
       count.textContent = `${sessions.length} matching session${sessions.length === 1 ? '' : 's'}`;
       const container = document.getElementById('sessions');
       container.className = 'sessions ' + state.view;
       document.getElementById('cardsBtn').classList.toggle('active', state.view === 'cards');
       document.getElementById('listBtn').classList.toggle('active', state.view === 'list');
-      container.innerHTML = sessions.slice(0, state.limit).map(sessionHtml).join('');
+      const visibleSessions = sessions.slice(0, state.limit);
+      container.innerHTML = visibleSessions.length ? visibleSessions.map(sessionHtml).join('') : '<div class="empty-state">No sessions match the current filters.</div>';
+      container.querySelectorAll('.session-card').forEach(card => card.onclick = event => {{
+        if (event.target.closest('button')) return;
+        const key = card.dataset.sessionKey;
+        if (state.activeSessionKey !== key) {{
+          state.activeSessionKey = key;
+          renderSessions();
+        }}
+      }});
       container.querySelectorAll('.detail-toggle').forEach(btn => btn.onclick = () => {{
         const key = btn.dataset.sessionKey;
-        if (state.expanded.has(key)) state.expanded.delete(key);
-        else state.expanded.add(key);
+        state.activeSessionKey = state.activeSessionKey === key ? null : key;
         renderSessions();
       }});
       document.getElementById('loadMore').style.display = sessions.length > state.limit ? 'inline-flex' : 'none';
+      renderSessionDrawer(activeSession);
     }}
     function renderSummary() {{
       const t = DATA.totals || {{}};

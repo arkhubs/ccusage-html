@@ -12,17 +12,20 @@ Use this skill to turn local `ccusage` data into a polished, interactive, single
 Run the generator with the Python environment available on the machine:
 
 ```powershell
-uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py --agent codex --serve
+uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py all --serve
 ```
 
 Useful options:
 
 ```powershell
-uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py --agent codex --since 2026-06-01 --until 2026-06-30 --output C:\Users\XuanFL\Desktop\ccusage-report.html
-uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py --agent codex --timezone Asia/Shanghai --speed auto
-uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py --agent claude --offline --no-transcript
+uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py codex --since 2026-06-01 --until 2026-06-30 --output C:\Users\XuanFL\Desktop\ccusage-report.html
+uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py codex --timezone Asia/Shanghai --speed auto
+uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py cc --offline --no-transcript
+uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py gemini --no-transcript
 uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py --agent codex --serve --port 8765
 ```
+
+Agent selection mirrors `ccusage`: omit the selector or use `all` for all detected agents, or put a supported agent command such as `codex`, `claude`, `cc`, `gemini`, `opencode`, or `qwen` before the other options.
 
 ## Workflow
 
@@ -37,6 +40,8 @@ The generated dashboard includes:
 
 - Daily, weekly, and monthly token bar charts.
 - Grouped model bars plus a total bar for each period bucket.
+- A top-level total cost stat alongside token totals.
+- Main Usage, Models, and Sessions tabs so session browsing has its own space.
 - Clickable legend chips to show/hide model bars and the total series.
 - Clickable bars that filter the session browser by date/week/month and, when applicable, by model.
 - A usage curve chart for the selected period and metric.

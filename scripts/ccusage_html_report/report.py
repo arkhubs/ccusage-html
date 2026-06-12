@@ -203,12 +203,12 @@ def find_pricing(model: str, price_map: dict[str, dict[str, Any]]) -> dict[str, 
     return None
 
 
-def collect_model_pricing(models: list[str], disabled: bool = False) -> dict[str, Any]:
+def collect_model_pricing(models: list[str], disabled: bool = False, disable_reason: str = "") -> dict[str, Any]:
     if disabled:
         return {
             "models": {},
             "unit": "USD per 1M tokens",
-            "sources": [{"name": "pricing", "status": "disabled", "reason": "--no-cost was used"}],
+            "sources": [{"name": "pricing", "status": "disabled", "reason": disable_reason or "price fetch disabled"}],
         }
     if not models:
         return {"models": {}, "unit": "USD per 1M tokens", "sources": []}
@@ -241,7 +241,7 @@ def collect_model_pricing(models: list[str], disabled: bool = False) -> dict[str
 
 
 def estimate_cost_usd(usage: dict[str, Any], price: dict[str, Any] | None) -> float | None:
-    if not isinstance(price, dict) or price.get("source") == "unavailable":
+    if not isinstance(price, dict) or price.get("source") in ("unavailable", "disabled"):
         return None
 
     total = 0.0
@@ -256,6 +256,14 @@ def estimate_cost_usd(usage: dict[str, Any], price: dict[str, Any] | None) -> fl
         total += tokens * rate / PRICE_UNIT_SCALE
         has_priced_tokens = True
     return total if has_priced_tokens else 0.0
+
+
+def model_cost_should_be_estimated(usage: dict[str, Any], estimated: float | None) -> bool:
+    if estimated is None or estimated <= 0:
+        return False
+    if not has_cost(usage):
+        return True
+    return cost_number(usage) == 0 and any(number(usage.get(field)) > 0 for field in TOKEN_FIELDS)
 
 
 def apply_model_cost_estimates(collection: list[dict[str, Any]], pricing: dict[str, Any]) -> None:
@@ -274,13 +282,14 @@ def apply_model_cost_estimates(collection: list[dict[str, Any]], pricing: dict[s
             if not isinstance(usage, dict):
                 all_models_have_cost = False
                 continue
-            if not has_cost(usage):
-                estimated = estimate_cost_usd(usage, price_models.get(model))
-                if estimated is None:
-                    all_models_have_cost = False
-                else:
-                    usage["costUSD"] = estimated
-                    usage["costSource"] = "estimatedFromModelPrice"
+            estimated = estimate_cost_usd(usage, price_models.get(model))
+            if model_cost_should_be_estimated(usage, estimated):
+                if has_cost(usage):
+                    usage["reportedCostUSD"] = cost_number(usage)
+                usage["costUSD"] = estimated
+                usage["costSource"] = "estimatedFromModelPrice"
+            elif not has_cost(usage):
+                all_models_have_cost = False
             if has_cost(usage):
                 model_cost_total += cost_number(usage)
             else:
@@ -323,6 +332,17 @@ def cost_number(source: dict[str, Any]) -> float:
     return 0
 
 
+def has_billable_usage(source: dict[str, Any]) -> bool:
+    return any(
+        usage_number(source, field) > 0
+        for field in ("inputTokens", "outputTokens", "cacheCreationTokens", "cacheReadTokens")
+    )
+
+
+def zero_cost_looks_missing(source: dict[str, Any]) -> bool:
+    return has_cost(source) and cost_number(source) == 0 and has_billable_usage(source)
+
+
 def fill_total_tokens(entry: dict[str, Any]) -> None:
     if number(entry.get("totalTokens")):
         return
@@ -348,7 +368,10 @@ def normalize_models(models: Any) -> dict[str, dict[str, Any]]:
         if isinstance(values, dict):
             entry = {field: usage_number(values, field) for field in TOKEN_FIELDS}
             if has_cost(values):
-                entry["costUSD"] = cost_number(values)
+                if zero_cost_looks_missing(values):
+                    entry["reportedCostUSD"] = 0
+                else:
+                    entry["costUSD"] = cost_number(values)
             fill_total_tokens(entry)
             add_derived_fields(entry)
             entry["isFallback"] = bool(values.get("isFallback", False))
@@ -372,7 +395,10 @@ def normalize_model_breakdowns(model_breakdowns: Any) -> dict[str, dict[str, Any
                 continue
             entry[field] = number(entry.get(field)) + usage_number(values, field)
         if has_cost(values) or has_cost(entry):
-            entry["costUSD"] = cost_number(entry) + cost_number(values)
+            if zero_cost_looks_missing(values):
+                entry["reportedCostUSD"] = number(entry.get("reportedCostUSD")) + cost_number(values)
+            else:
+                entry["costUSD"] = cost_number(entry) + cost_number(values)
     for entry in normalized.values():
         fill_total_tokens(entry)
         add_derived_fields(entry)
@@ -416,6 +442,71 @@ def parse_iso_datetime(value: Any) -> datetime | None:
         return None
 
 
+def parse_datetime_from_text(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    direct = parse_iso_datetime(value)
+    if direct:
+        return direct
+
+    cleaned = value.strip()
+    match = re.search(
+        r"(\d{4})-(\d{2})-(\d{2})[T_](\d{2})[-:](\d{2})(?:[-:](\d{2}))?",
+        cleaned,
+    )
+    if match:
+        year, month, day, hour, minute, second = match.groups(default="0")
+        try:
+            return datetime(
+                int(year),
+                int(month),
+                int(day),
+                int(hour),
+                int(minute),
+                int(second),
+            )
+        except ValueError:
+            return None
+
+    match = re.search(r"(\d{4})[/-](\d{2})[/-](\d{2})", cleaned)
+    if match:
+        year, month, day = match.groups()
+        try:
+            return datetime(int(year), int(month), int(day))
+        except ValueError:
+            return None
+    return None
+
+
+def session_datetime(item: dict[str, Any]) -> datetime | None:
+    candidates = (
+        item.get("lastActivity"),
+        metadata_value(item, "lastActivity"),
+        item.get("timestamp"),
+        metadata_value(item, "timestamp"),
+        item.get("date"),
+        item.get("period"),
+        item.get("sessionId"),
+        item.get("directory"),
+        item.get("sessionFile"),
+    )
+    for candidate in candidates:
+        parsed = parse_datetime_from_text(candidate)
+        if parsed:
+            return parsed
+    return None
+
+
+def datetime_sort_value(value: datetime | None) -> float:
+    if not value:
+        return 0
+    try:
+        return value.timestamp()
+    except (OSError, ValueError):
+        return 0
+
+
 def iso_week_label_from_date(date_text: str) -> str:
     try:
         day = datetime.fromisoformat(date_text[:10]).date()
@@ -455,6 +546,15 @@ def aggregate_totals(collection: list[dict[str, Any]]) -> dict[str, Any]:
     for item in collection:
         add_token_fields(totals, item)
     return totals
+
+
+def sort_sessions_recent_first(sessions: list[dict[str, Any]]) -> None:
+    sessions.sort(
+        key=lambda session: (
+            -number(session.get("sortTime")),
+            str(session.get("title") or session.get("reportSessionId") or "").lower(),
+        )
+    )
 
 
 def trim_text(value: str, max_chars: int) -> str:
@@ -531,6 +631,7 @@ def enrich_codex_session(
     title = ""
     snippets: list[dict[str, str]] = []
     conversation: list[dict[str, Any]] = []
+    last_conversation_time: datetime | None = None
 
     if path and path.exists():
         try:
@@ -553,13 +654,20 @@ def enrich_codex_session(
                         continue
                     raw_text = text.strip()
                     compact = trim_text(raw_text, max_chars)
+                    turn_time = str(event.get("timestamp") or "")
+                    parsed_turn_time = parse_datetime_from_text(turn_time)
+                    if parsed_turn_time and (
+                        last_conversation_time is None
+                        or datetime_sort_value(parsed_turn_time) > datetime_sort_value(last_conversation_time)
+                    ):
+                        last_conversation_time = parsed_turn_time
                     if role == "user" and not title:
                         title = trim_text(re.sub(r"^[#>\-\s]+", "", compact), 96)
                     conversation.append(
                         {
                             "role": str(role),
                             "text": raw_text,
-                            "time": str(event.get("timestamp") or ""),
+                            "time": turn_time,
                             "chars": len(raw_text),
                         }
                     )
@@ -568,7 +676,7 @@ def enrich_codex_session(
                             {
                                 "role": str(role),
                                 "text": compact,
-                                "time": str(event.get("timestamp") or ""),
+                                "time": turn_time,
                             }
                         )
         except OSError:
@@ -581,6 +689,9 @@ def enrich_codex_session(
     session["snippets"] = snippets
     session["conversation"] = conversation
     session["transcriptPath"] = str(path) if path else ""
+    if last_conversation_time and not session.get("sortTime"):
+        session["lastActivityAt"] = last_conversation_time.isoformat()
+        session["sortTime"] = datetime_sort_value(last_conversation_time)
     return session
 
 
@@ -621,16 +732,16 @@ def normalize_session(
         session["costUSD"] = cost_number(item)
     add_derived_fields(session)
 
-    dt = parse_iso_datetime(item.get("lastActivity") or metadata_value(item, "lastActivity"))
+    dt = session_datetime(item)
     if dt:
         date_label = dt.date().isoformat()
     else:
-        directory = str(item.get("directory") or item.get("period") or "").replace("\\", "/")
-        match = re.search(r"(\d{4})/(\d{2})/(\d{2})", directory)
-        date_label = "-".join(match.groups()) if match else "Unknown"
+        date_label = "Unknown"
     session["date"] = date_label
     session["week"] = iso_week_label_from_date(date_label)
     session["month"] = date_label[:7] if re.match(r"\d{4}-\d{2}", date_label) else "Unknown"
+    session["lastActivityAt"] = dt.isoformat() if dt else ""
+    session["sortTime"] = datetime_sort_value(dt)
 
     try_codex_transcript = include_transcript and sessions_root and (agent in ("all", "codex") or item_agent == "codex")
     if try_codex_transcript:
@@ -683,10 +794,19 @@ def build_report_data_from_payloads(args: argparse.Namespace, payloads: dict[str
     ]
 
     models = discover_models(daily, weekly, monthly, sessions)
-    model_prices = collect_model_pricing(models, disabled=bool(args.no_cost))
+    price_disabled = bool(args.no_cost or getattr(args, "no_price_fetch", False))
+    if args.no_cost:
+        price_disable_reason = "--no-cost was used"
+    elif getattr(args, "no_price_fetch", False):
+        price_disable_reason = "--no-price-fetch was used"
+    else:
+        price_disable_reason = ""
+    model_prices = collect_model_pricing(models, disabled=price_disabled, disable_reason=price_disable_reason)
     if not args.no_cost:
         for collection in (daily, weekly, monthly, sessions):
             apply_model_cost_estimates(collection, model_prices)
+
+    sort_sessions_recent_first(sessions)
 
     totals = dict(daily_payload.get("totals") or session_payload.get("totals") or {})
     fallback_totals = aggregate_totals(daily or sessions)

@@ -13,24 +13,28 @@ This project contains a Codex skill plus a standalone Python generator. The repo
 - Usage curve chart.
 - Session card/list views with a right-side detail drawer for token type, model breakdown, cost, context token, and Codex chat-style full-conversation details when local transcripts are available.
 - Persistent `reports/<timestamp>/` archives containing the HTML, normalized report data, raw ccusage JSON payloads, session records, and a manifest.
-- Console output that exposes the local URL and generated file/archive paths.
+- Console output that exposes the local URL immediately, then generated file/archive paths when ready.
 - Optional local HTTP serving with `--serve`.
 
 ## Quick Start
 
 ```powershell
-uv run python .\scripts\generate_ccusage_report.py all --serve --port 8765
+uv run python .\scripts\generate_ccusage_report.py all --serve --port 0
 ```
 
-The command prints the local URL plus the generated HTML and archive paths, for example:
+The command starts the local HTTP server first, prints the URL immediately, and shows a loading page until data generation finishes. It then prints the generated HTML and archive paths, for example:
 
 ```text
-Report URL: http://127.0.0.1:8765/ccusage-report.html
+Report URL: http://127.0.0.1:49231/ccusage-report.html
+Report status: generating data...
+Serving report at: http://127.0.0.1:49231/ccusage-report.html
+Report ready: http://127.0.0.1:49231/ccusage-report.html
 Report HTML: E:\Projects\Active\ccusage-html\reports\20260612-151530\ccusage-report.html
 Archive directory: E:\Projects\Active\ccusage-html\reports\20260612-151530
 ```
 
 By default, reports are kept under `reports/<timestamp>/` instead of a temporary directory.
+The local URL is available only while the `--serve` process is running. If the process is stopped or killed by a tool timeout, open the generated `Report HTML` file directly or start the server again.
 
 ## Examples
 
@@ -43,13 +47,19 @@ uv run python .\scripts\generate_ccusage_report.py --agent codex --serve
 uv run python .\scripts\generate_ccusage_report.py all --reports-dir .\reports-archive
 ```
 
+For the fastest interactive preview, use `--serve --port 0`; add `--no-transcript` when the session conversation drawer is not needed. If you must use a fixed port, add `--strict-port` to fail instead of falling back to a free port when the requested port is busy. Use `--no-price-fetch` only when you intentionally want to skip report-side current price lookup and cost estimates.
+
 Agent selection mirrors `ccusage`: omit the selector or use `all` for all detected agents, or put an agent command such as `codex`, `claude`, `cc`, `gemini`, `opencode`, or `qwen` before the other options. The older `--agent` option still works.
 
 ## Wiki
 
 Project documentation lives in [`docs/wiki/v0.0.1.md`](docs/wiki/v0.0.1.md).
 
-Latest v0.0.5 notes live in [`docs/wiki/v0.0.5.md`](docs/wiki/v0.0.5.md).
+Latest v0.0.7 notes live in [`docs/wiki/v0.0.7.md`](docs/wiki/v0.0.7.md).
+
+v0.0.6 notes live in [`docs/wiki/v0.0.6.md`](docs/wiki/v0.0.6.md).
+
+v0.0.5 notes live in [`docs/wiki/v0.0.5.md`](docs/wiki/v0.0.5.md).
 
 v0.0.4 notes live in [`docs/wiki/v0.0.4.md`](docs/wiki/v0.0.4.md).
 

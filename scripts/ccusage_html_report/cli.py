@@ -31,6 +31,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--offline", action="store_true", help="Use ccusage cached pricing data where supported.")
     parser.add_argument("--no-cost", action="store_true", help="Hide cost data in ccusage output.")
     parser.add_argument(
+        "--no-price-fetch",
+        action="store_true",
+        help="Do not fetch external model price metadata for report-side cost estimates.",
+    )
+    parser.add_argument(
         "--speed",
         default="auto",
         choices=("auto", "standard", "fast"),
@@ -68,6 +73,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=8765,
         help="Port for --serve. Use 0 to choose a free port.",
+    )
+    parser.add_argument(
+        "--strict-port",
+        action="store_true",
+        help="Fail if --port is unavailable instead of falling back to a free port.",
     )
     args = parser.parse_args()
     args.agent_input = args.agent_option or args.agent_selector or "all"

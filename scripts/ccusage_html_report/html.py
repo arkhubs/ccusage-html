@@ -151,6 +151,17 @@ def html_document(data: dict[str, Any]) -> str:
       gap: 8px;
       flex: 1 1 620px;
     }}
+    .session-filters {{
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(140px, 1fr)) minmax(230px, 1.2fr);
+      gap: 8px;
+    }}
+    .date-filter {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }}
     .sessions-shell {{
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
@@ -349,6 +360,14 @@ def html_document(data: dict[str, Any]) -> str:
       gap: 14px;
       padding: 2px 2px 6px;
     }}
+    .conversation-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }}
     .turn {{
       display: flex;
       gap: 10px;
@@ -408,7 +427,7 @@ def html_document(data: dict[str, Any]) -> str:
     .muted {{ color: var(--muted); }}
     .footer-note {{ margin-top: 18px; color: var(--muted); font-size: 12px; }}
     @media (max-width: 960px) {{
-      .summary, .session-controls, .sessions-shell, .sessions.cards, .sessions.list .session-card {{ grid-template-columns: 1fr; }}
+      .summary, .session-controls, .session-filters, .date-filter, .sessions-shell, .sessions.cards, .sessions.list .session-card {{ grid-template-columns: 1fr; }}
       .session-top {{ display: grid; }}
       .session-id {{ max-width: none; text-align: left; }}
       .sessions.list .session-metrics {{
@@ -463,9 +482,10 @@ def html_document(data: dict[str, Any]) -> str:
         <div class="toolbar session-toolbar">
           <h2>Sessions</h2>
           <div class="session-controls">
-            <input id="sessionSearch" placeholder="Search title, agent, model, or snippet">
+            <input id="sessionSearch" placeholder="Search title, agent, model, or transcript">
             <select id="sessionSort">
               <option value="recent">Recent first</option>
+              <option value="oldest">Oldest first</option>
               <option value="tokens">Tokens high to low</option>
               <option value="cost">Cost high to low</option>
               <option value="title">Title A to Z</option>
@@ -473,6 +493,19 @@ def html_document(data: dict[str, Any]) -> str:
             <div class="view-switch">
               <button id="cardsBtn" class="active">Cards</button>
               <button id="listBtn">List</button>
+            </div>
+            <div class="session-filters">
+              <select id="sessionAgent" aria-label="Filter by agent"></select>
+              <select id="sessionModel" aria-label="Filter by model"></select>
+              <select id="sessionTranscript" aria-label="Filter by transcript">
+                <option value="all">All transcripts</option>
+                <option value="with">With transcript</option>
+                <option value="without">No transcript</option>
+              </select>
+              <div class="date-filter">
+                <input id="sessionFrom" type="date" title="From date" aria-label="From date">
+                <input id="sessionTo" type="date" title="To date" aria-label="To date">
+              </div>
             </div>
           </div>
         </div>
@@ -502,8 +535,11 @@ def html_document(data: dict[str, Any]) -> str:
       view: 'cards',
       sort: 'recent',
       query: '',
+      filters: {{agent: '', model: '', transcript: 'all', dateFrom: '', dateTo: ''}},
       limit: 80,
-      activeSessionKey: null
+      activeSessionKey: null,
+      conversationBatch: 24,
+      conversationLimits: new Map()
     }};
     const palette = ['#38bdf8', '#14b8a6', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#f97316', '#0ea5e9', '#10b981'];
     let barHits = [];
@@ -540,6 +576,65 @@ def html_document(data: dict[str, Any]) -> str:
     }}
     function esc(s) {{
       return String(s ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
+    }}
+    function uniqueSorted(values) {{
+      return Array.from(new Set(values.map(v => String(v || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    }}
+    function optionHtml(label, value = '') {{
+      return `<option value="${esc(value)}">${esc(label)}</option>`;
+    }}
+    function setupSessionFilterOptions() {{
+      const sessions = DATA.sessions || [];
+      const agents = uniqueSorted(sessions.map(s => s.agentName || DATA.agent));
+      const models = uniqueSorted([...(DATA.models || []), ...sessions.flatMap(s => s.modelNames || [])]);
+      document.getElementById('sessionAgent').innerHTML = optionHtml('All agents') + agents.map(agent => optionHtml(agent, agent)).join('');
+      document.getElementById('sessionModel').innerHTML = optionHtml('All models') + models.map(model => optionHtml(model, model)).join('');
+    }}
+    function syncSessionFilterInputs() {{
+      document.getElementById('sessionSearch').value = state.query;
+      document.getElementById('sessionSort').value = state.sort;
+      document.getElementById('sessionAgent').value = state.filters.agent;
+      document.getElementById('sessionModel').value = state.filters.model;
+      document.getElementById('sessionTranscript').value = state.filters.transcript;
+      document.getElementById('sessionFrom').value = state.filters.dateFrom;
+      document.getElementById('sessionTo').value = state.filters.dateTo;
+    }}
+    function resetSessionPaging() {{
+      state.limit = 80;
+      state.activeSessionKey = null;
+    }}
+    function clearSessionFilters() {{
+      state.selected = null;
+      state.query = '';
+      state.filters = {{agent: '', model: '', transcript: 'all', dateFrom: '', dateTo: ''}};
+      resetSessionPaging();
+      syncSessionFilterInputs();
+      renderAll();
+    }}
+    function sessionTime(s) {{
+      return Number(s.sortTime || 0);
+    }}
+    function compareTitle(a, b) {{
+      return String(a.title || a.reportSessionId || '').localeCompare(String(b.title || b.reportSessionId || ''));
+    }}
+    function hasTranscript(s) {{
+      return Boolean((s.conversation || []).length || s.transcriptPath);
+    }}
+    function sessionMatchesManualFilters(s) {{
+      const filters = state.filters;
+      if (filters.agent && String(s.agentName || DATA.agent || '') !== filters.agent) return false;
+      if (filters.model && !(s.modelNames || []).includes(filters.model)) return false;
+      if (filters.transcript === 'with' && !hasTranscript(s)) return false;
+      if (filters.transcript === 'without' && hasTranscript(s)) return false;
+      const date = String(s.date || '');
+      if (filters.dateFrom && (!date || date === 'Unknown' || date < filters.dateFrom)) return false;
+      if (filters.dateTo && (!date || date === 'Unknown' || date > filters.dateTo)) return false;
+      return true;
+    }}
+    function applySessionFiltersChanged() {{
+      resetSessionPaging();
+      renderSessionFilter();
+      renderSessions();
     }}
     function seriesColor(series, i) {{
       if (series === '__total') return palette[0];
@@ -720,12 +815,23 @@ def html_document(data: dict[str, Any]) -> str:
     }}
     function renderSessionFilter() {{
       const el = document.getElementById('sessionFilter');
-      if (!state.selected) {{
+      const pills = [];
+      if (state.selected) {{
+        pills.push(`Filtered by ${esc(state.period)}: ${esc(state.selected.label)} / ${esc(seriesLabel(state.selected.series))}`);
+      }}
+      if (state.query) pills.push(`Search: ${esc(state.query)}`);
+      if (state.filters.agent) pills.push(`Agent: ${esc(state.filters.agent)}`);
+      if (state.filters.model) pills.push(`Model: ${esc(state.filters.model)}`);
+      if (state.filters.transcript === 'with') pills.push('With transcript');
+      if (state.filters.transcript === 'without') pills.push('No transcript');
+      if (state.filters.dateFrom) pills.push(`From: ${esc(state.filters.dateFrom)}`);
+      if (state.filters.dateTo) pills.push(`To: ${esc(state.filters.dateTo)}`);
+      if (!pills.length) {{
         el.innerHTML = '';
         return;
       }}
-      el.innerHTML = `<span class="pill">Filtered by ${esc(state.period)}: ${esc(state.selected.label)} / ${esc(seriesLabel(state.selected.series))}</span><button id="clearSessionFilter">Clear filter</button>`;
-      document.getElementById('clearSessionFilter').onclick = () => {{ state.selected = null; renderAll(); }};
+      el.innerHTML = pills.map(pill => `<span class="pill">${pill}</span>`).join('') + '<button id="clearSessionFilter">Clear filters</button>';
+      document.getElementById('clearSessionFilter').onclick = clearSessionFilters;
     }}
     function bucketMatchesSession(s) {{
       if (!state.selected) return true;
@@ -736,7 +842,7 @@ def html_document(data: dict[str, Any]) -> str:
     }}
     function filteredSessions() {{
       const q = state.query.toLowerCase();
-      let sessions = (DATA.sessions || []).filter(bucketMatchesSession);
+      let sessions = (DATA.sessions || []).filter(bucketMatchesSession).filter(sessionMatchesManualFilters);
       if (q) {{
         sessions = sessions.filter(s => {{
           const hay = [
@@ -745,6 +851,10 @@ def html_document(data: dict[str, Any]) -> str:
             s.sessionId,
             s.sessionFile,
             s.transcriptPath,
+            s.date,
+            s.week,
+            s.month,
+            s.lastActivityAt,
             ...(s.modelNames || []),
             ...((s.snippets || []).map(x => x.text)),
             ...((s.conversation || []).map(x => x.text))
@@ -756,7 +866,8 @@ def html_document(data: dict[str, Any]) -> str:
         if (state.sort === 'tokens') return Number(b.totalTokens || 0) - Number(a.totalTokens || 0);
         if (state.sort === 'cost') return Number(b.costUSD || 0) - Number(a.costUSD || 0);
         if (state.sort === 'title') return String(a.title || '').localeCompare(String(b.title || ''));
-        return String(b.lastActivity || '').localeCompare(String(a.lastActivity || ''));
+        if (state.sort === 'oldest') return (sessionTime(a) - sessionTime(b)) || compareTitle(a, b);
+        return (sessionTime(b) - sessionTime(a)) || compareTitle(a, b);
       }});
       return sessions;
     }}
@@ -770,7 +881,8 @@ def html_document(data: dict[str, Any]) -> str:
       return (((DATA.modelPrices || {{}}).models || {{}})[model]) || null;
     }}
     function priceBlocks(price) {{
-      if (!price || price.source === 'unavailable') {{
+      const hasAnyRate = price && ['input', 'output', 'cacheRead', 'cacheCreation'].some((key) => price[key] !== undefined && price[key] !== null && !Number.isNaN(Number(price[key])));
+      if (!price || price.source === 'unavailable' || price.source === 'disabled' || !hasAnyRate) {{
         return '<div class="price-strip muted">Current price unavailable.</div>';
       }}
       const blocks = [
@@ -802,23 +914,36 @@ def html_document(data: dict[str, Any]) -> str:
         </div>
       </div>`).join('')}</div>`;
     }}
+    function conversationLimit(s) {{
+      const key = sessionKey(s);
+      return Number(state.conversationLimits.get(key) || state.conversationBatch);
+    }}
+    function turnHtml(turn) {{
+      const role = turn.role === 'assistant' ? 'assistant' : 'user';
+      const roleLabel = role === 'assistant' ? 'Agent' : 'You';
+      const avatar = role === 'assistant' ? 'AI' : 'You';
+      return `<div class="turn ${role}">
+        <div class="chat-avatar">${avatar}</div>
+        <div class="chat-bubble">
+          <div class="chat-meta"><b>${roleLabel}</b><span>${esc(turn.time || '')}</span><span>${fmt(turn.chars)} chars</span></div>
+          <div class="text">${esc(turn.text)}</div>
+        </div>
+      </div>`;
+    }}
     function conversationHtml(s) {{
       const turns = s.conversation || [];
       if (!turns.length) {{
         return '<div class="muted">No full transcript available for this session. Codex sessions include full local conversation when the JSONL file can be located.</div>';
       }}
-      return `<div class="conversation">${turns.map(turn => {{
-        const role = turn.role === 'assistant' ? 'assistant' : 'user';
-        const roleLabel = role === 'assistant' ? 'Agent' : 'You';
-        const avatar = role === 'assistant' ? 'AI' : 'You';
-        return `<div class="turn ${role}">
-          <div class="chat-avatar">${avatar}</div>
-          <div class="chat-bubble">
-            <div class="chat-meta"><b>${roleLabel}</b><span>${esc(turn.time || '')}</span><span>${fmt(turn.chars)} chars</span></div>
-            <div class="text">${esc(turn.text)}</div>
-          </div>
-        </div>`;
-      }}).join('')}</div>`;
+      const key = sessionKey(s);
+      const visibleTurns = turns.slice(0, conversationLimit(s));
+      const remaining = Math.max(0, turns.length - visibleTurns.length);
+      return `<div class="conversation-head">
+        <span class="conversation-count" data-total="${turns.length}">Showing ${fmt(visibleTurns.length)} of ${fmt(turns.length)} turns</span>
+        <span class="conversation-remaining">${remaining ? fmt(remaining) + ' more' : 'Complete'}</span>
+      </div>
+      <div class="conversation" data-session-key="${esc(key)}" data-visible="${visibleTurns.length}" data-total="${turns.length}">${visibleTurns.map(turnHtml).join('')}</div>
+      ${remaining ? `<div class="load-row conversation-load-row"><button class="conversation-load" data-session-key="${esc(key)}">Load more turns</button></div>` : ''}`;
     }}
     function sessionDetailHtml(s) {{
       const detailMetrics = [
@@ -909,6 +1034,76 @@ def html_document(data: dict[str, Any]) -> str:
         state.activeSessionKey = null;
         renderSessions();
       }};
+      bindConversationLoad(activeSession);
+    }}
+    function bindSessionCards(root) {{
+      root.querySelectorAll('.session-card').forEach(card => card.onclick = event => {{
+        if (event.target.closest('button')) return;
+        const key = card.dataset.sessionKey;
+        if (state.activeSessionKey !== key) {{
+          state.activeSessionKey = key;
+          renderSessions();
+        }}
+      }});
+      root.querySelectorAll('.detail-toggle').forEach(btn => btn.onclick = () => {{
+        const key = btn.dataset.sessionKey;
+        state.activeSessionKey = state.activeSessionKey === key ? null : key;
+        renderSessions();
+      }});
+    }}
+    function updateSessionCount(sessions, visibleCount) {{
+      const count = document.getElementById('sessionCount');
+      count.textContent = `Showing ${visibleCount} of ${sessions.length} matching session${sessions.length === 1 ? '' : 's'}`;
+      document.getElementById('loadMore').style.display = sessions.length > visibleCount ? 'inline-flex' : 'none';
+    }}
+    function appendSessionCards() {{
+      const sessions = filteredSessions();
+      const container = document.getElementById('sessions');
+      const previousLimit = Math.min(state.limit, sessions.length);
+      const nextLimit = Math.min(sessions.length, previousLimit + 80);
+      if (nextLimit <= previousLimit) return;
+      state.limit = nextLimit;
+      container.insertAdjacentHTML('beforeend', sessions.slice(previousLimit, nextLimit).map(sessionHtml).join(''));
+      bindSessionCards(container);
+      updateSessionCount(sessions, nextLimit);
+    }}
+    function bindConversationLoad(activeSession) {{
+      const drawer = document.getElementById('sessionDrawer');
+      const loadConversation = drawer.querySelector('.conversation-load');
+      if (!loadConversation) return;
+      loadConversation.onclick = () => appendConversationTurns(activeSession);
+    }}
+    function appendConversationTurns(activeSession) {{
+      const key = sessionKey(activeSession);
+      const turns = activeSession.conversation || [];
+      const drawer = document.getElementById('sessionDrawer');
+      const conversation = drawer.querySelector('.conversation');
+      const loadButton = drawer.querySelector('.conversation-load');
+      if (!conversation || !loadButton) return;
+
+      const current = Number(conversation.dataset.visible || 0);
+      const nextLimit = Math.min(turns.length, current + state.conversationBatch);
+      const nextTurns = turns.slice(current, nextLimit);
+      if (!nextTurns.length) return;
+
+      loadButton.disabled = true;
+      conversation.insertAdjacentHTML('beforeend', nextTurns.map(turnHtml).join(''));
+      conversation.dataset.visible = String(nextLimit);
+      state.conversationLimits.set(key, nextLimit);
+
+      const remaining = Math.max(0, turns.length - nextLimit);
+      const count = drawer.querySelector('.conversation-count');
+      const remainingEl = drawer.querySelector('.conversation-remaining');
+      if (count) count.textContent = `Showing ${fmt(nextLimit)} of ${fmt(turns.length)} turns`;
+      if (remainingEl) remainingEl.textContent = remaining ? `${fmt(remaining)} more` : 'Complete';
+
+      if (remaining) {{
+        loadButton.disabled = false;
+        loadButton.textContent = 'Load more turns';
+      }} else {{
+        const loadRow = loadButton.closest('.conversation-load-row');
+        if (loadRow) loadRow.remove();
+      }}
     }}
     function renderSessions() {{
       const sessions = filteredSessions();
@@ -917,28 +1112,14 @@ def html_document(data: dict[str, Any]) -> str:
         state.activeSessionKey = null;
         activeSession = null;
       }}
-      const count = document.getElementById('sessionCount');
-      count.textContent = `${sessions.length} matching session${sessions.length === 1 ? '' : 's'}`;
       const container = document.getElementById('sessions');
       container.className = 'sessions ' + state.view;
       document.getElementById('cardsBtn').classList.toggle('active', state.view === 'cards');
       document.getElementById('listBtn').classList.toggle('active', state.view === 'list');
       const visibleSessions = sessions.slice(0, state.limit);
+      updateSessionCount(sessions, visibleSessions.length);
       container.innerHTML = visibleSessions.length ? visibleSessions.map(sessionHtml).join('') : '<div class="empty-state">No sessions match the current filters.</div>';
-      container.querySelectorAll('.session-card').forEach(card => card.onclick = event => {{
-        if (event.target.closest('button')) return;
-        const key = card.dataset.sessionKey;
-        if (state.activeSessionKey !== key) {{
-          state.activeSessionKey = key;
-          renderSessions();
-        }}
-      }});
-      container.querySelectorAll('.detail-toggle').forEach(btn => btn.onclick = () => {{
-        const key = btn.dataset.sessionKey;
-        state.activeSessionKey = state.activeSessionKey === key ? null : key;
-        renderSessions();
-      }});
-      document.getElementById('loadMore').style.display = sessions.length > state.limit ? 'inline-flex' : 'none';
+      bindSessionCards(container);
       renderSessionDrawer(activeSession);
     }}
     function renderSummary() {{
@@ -1056,12 +1237,34 @@ def html_document(data: dict[str, Any]) -> str:
     }});
     document.getElementById('sessionSearch').addEventListener('input', event => {{
       state.query = event.target.value;
-      state.limit = 80;
+      resetSessionPaging();
+      renderSessionFilter();
       renderSessions();
     }});
     document.getElementById('sessionSort').addEventListener('change', event => {{
       state.sort = event.target.value;
+      resetSessionPaging();
       renderSessions();
+    }});
+    document.getElementById('sessionAgent').addEventListener('change', event => {{
+      state.filters.agent = event.target.value;
+      applySessionFiltersChanged();
+    }});
+    document.getElementById('sessionModel').addEventListener('change', event => {{
+      state.filters.model = event.target.value;
+      applySessionFiltersChanged();
+    }});
+    document.getElementById('sessionTranscript').addEventListener('change', event => {{
+      state.filters.transcript = event.target.value;
+      applySessionFiltersChanged();
+    }});
+    document.getElementById('sessionFrom').addEventListener('change', event => {{
+      state.filters.dateFrom = event.target.value;
+      applySessionFiltersChanged();
+    }});
+    document.getElementById('sessionTo').addEventListener('change', event => {{
+      state.filters.dateTo = event.target.value;
+      applySessionFiltersChanged();
     }});
     document.getElementById('cardsBtn').onclick = () => {{
       state.view = 'cards';
@@ -1076,8 +1279,7 @@ def html_document(data: dict[str, Any]) -> str:
       renderSessions();
     }};
     document.getElementById('loadMore').onclick = () => {{
-      state.limit += 80;
-      renderSessions();
+      appendSessionCards();
     }};
     window.addEventListener('resize', () => {{
       window.clearTimeout(window.__ccusageResize);
@@ -1085,6 +1287,8 @@ def html_document(data: dict[str, Any]) -> str:
         if (state.activeTab === 'usage') {{ drawBarChart(); drawLineChart(); }}
       }}, 120);
     }});
+    setupSessionFilterOptions();
+    syncSessionFilterInputs();
     renderAll();
   </script>
 </body>

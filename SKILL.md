@@ -12,7 +12,7 @@ Use this skill to turn local `ccusage` data into a polished, interactive, single
 Run the generator with the Python environment available on the machine:
 
 ```powershell
-uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py all --serve
+uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate_ccusage_report.py all --serve --port 0
 ```
 
 Useful options:
@@ -29,11 +29,15 @@ Agent selection mirrors `ccusage`: omit the selector or use `all` for all detect
 
 By default, each run creates a persistent `reports/<timestamp>/` archive beside the script project. The archive contains `ccusage-report.html`, `report-data.json`, `sessions.json`, `manifest.json`, and raw `ccusage` JSON payloads under `raw/`. Use `--reports-dir` to choose a different archive root.
 
+With `--serve`, the local HTTP server starts before ccusage data collection. The command prints `Report URL` immediately, serves a loading page, and replaces it with the final dashboard when generation completes. Use `--port 0` to avoid port collisions, or `--strict-port` when a fixed port must fail loudly. Use `--no-price-fetch` only when report-side current price lookup and cost estimates should be skipped.
+
+The URL works only while the serving process is alive. If Codex or another tool runs the command with a timeout and kills the process, use the printed `Report HTML` path or start `--serve` again in a persistent/background process.
+
 ## Workflow
 
 1. Confirm `ccusage --version` works if the user has not already confirmed it.
 2. Generate the report with `scripts/generate_ccusage_report.py`.
-3. Prefer `--serve` when the user wants to view or interact with the report; give the printed `http://127.0.0.1:PORT/...` URL.
+3. Prefer `--serve --port 0` when the user wants to view or interact with the report; give the printed `http://127.0.0.1:PORT/...` URL as soon as it appears.
 4. Also give the printed absolute `Report HTML`, `Archive directory`, `Report data`, and `Raw data` paths so the user has an entry point after viewing.
 
 ## Report Features
@@ -54,6 +58,7 @@ The generated dashboard includes:
 - Session card/list toggle with search, sorting, title extraction, token/cost summaries, context token estimates, per-model details, and a right-side drawer with local Codex chat-style full-conversation views.
 - Persistent timestamped archives with normalized data, raw payloads, session records, and manifest metadata.
 - Terminal output and in-report footer metadata exposing the local URL and file locations.
+- Fast serve startup with an auto-refreshing loading page before the final report is ready.
 
 ## Transcript Notes
 

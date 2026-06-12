@@ -22,7 +22,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--since", help="Start date accepted by ccusage, e.g. 2026-06-01.")
     parser.add_argument("--until", help="End date accepted by ccusage, e.g. 2026-06-30.")
     parser.add_argument("--timezone", help="IANA timezone passed through to ccusage.")
-    parser.add_argument("--output", help="Output HTML path. Defaults to ~/.codex/tmp.")
+    parser.add_argument("--output", help="Output HTML path. Defaults to reports/<timestamp>/ccusage-report.html.")
+    parser.add_argument(
+        "--reports-dir",
+        help="Archive root for raw JSON, normalized data, manifest, and the default HTML output. Defaults to ./reports.",
+    )
     parser.add_argument("--ccusage-bin", default="ccusage", help="ccusage executable name or path.")
     parser.add_argument("--offline", action="store_true", help="Use ccusage cached pricing data where supported.")
     parser.add_argument("--no-cost", action="store_true", help="Hide cost data in ccusage output.")

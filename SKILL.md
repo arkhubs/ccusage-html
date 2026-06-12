@@ -27,12 +27,14 @@ uv run python C:\Users\XuanFL\.codex\skills\ccusage-html-report\scripts\generate
 
 Agent selection mirrors `ccusage`: omit the selector or use `all` for all detected agents, or put a supported agent command such as `codex`, `claude`, `cc`, `gemini`, `opencode`, or `qwen` before the other options.
 
+By default, each run creates a persistent `reports/<timestamp>/` archive beside the script project. The archive contains `ccusage-report.html`, `report-data.json`, `sessions.json`, `manifest.json`, and raw `ccusage` JSON payloads under `raw/`. Use `--reports-dir` to choose a different archive root.
+
 ## Workflow
 
 1. Confirm `ccusage --version` works if the user has not already confirmed it.
 2. Generate the report with `scripts/generate_ccusage_report.py`.
 3. Prefer `--serve` when the user wants to view or interact with the report; give the printed `http://127.0.0.1:PORT/...` URL.
-4. Also give the absolute path to the generated HTML file for archival use.
+4. Also give the printed absolute `Report HTML`, `Archive directory`, `Report data`, and `Raw data` paths so the user has an entry point after viewing.
 
 ## Report Features
 
@@ -40,16 +42,21 @@ The generated dashboard includes:
 
 - Daily, weekly, and monthly token bar charts.
 - Grouped model bars plus a total bar for each period bucket.
-- A top-level total cost stat alongside token totals.
-- Main Usage, Models, and Sessions tabs so session browsing has its own space.
+- `all` mode model breakdowns normalized from `ccusage` `modelBreakdowns`.
+- A top-level total cost stat and a cost metric switch alongside token totals.
+- Best-effort current model price display from models.dev or LiteLLM, including input, output, cache hit, and cache write when available.
+- Per-model cost estimates when `ccusage` provides token-level model breakdowns but omits model-level cost.
+- Usage and Sessions tabs. Model mix cards are merged into the top of Usage.
 - Clickable legend chips to show/hide model bars and the total series.
 - Clickable bars that filter the session browser by date/week/month and, when applicable, by model.
 - A usage curve chart for the selected period and metric.
-- Metric switching for total, input, output, reasoning, cache read, and cache creation tokens.
-- Session card/list toggle with search, sorting, title extraction, token/cost summaries, and local Codex chat snippets.
+- Metric switching for total, input, output, reasoning, cost, cache read, and cache creation.
+- Session card/list toggle with search, sorting, title extraction, token/cost summaries, context token estimates, per-model details, and expandable local Codex full-conversation views.
+- Persistent timestamped archives with normalized data, raw payloads, session records, and manifest metadata.
+- Terminal output and in-report footer metadata exposing the local URL and file locations.
 
 ## Transcript Notes
 
-Transcript enrichment is best for Codex sessions because `ccusage codex session --json` exposes session IDs that map to `~/.codex/sessions/**.jsonl`. The script skips large context/system messages and keeps only short user/assistant snippets. For non-Codex agents, use `--no-transcript` unless local transcript support is added.
+Transcript enrichment is best for Codex sessions because `ccusage codex session --json` exposes session IDs that map to `~/.codex/sessions/**.jsonl`. The script skips large context/system messages, keeps short user/assistant snippets for cards, and embeds full local conversation turns for expandable details. For non-Codex agents, use `--no-transcript` unless local transcript support is added.
 
-The HTML embeds the selected snippets, so treat the output as private usage data unless the user explicitly wants it shared.
+The HTML embeds selected snippets and, for Codex sessions, full local conversation text, so treat the output as private usage data unless the user explicitly wants it shared.

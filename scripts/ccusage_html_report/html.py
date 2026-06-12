@@ -138,6 +138,11 @@ def html_document(data: dict[str, Any]) -> str:
       gap: 8px;
       margin-top: 12px;
     }}
+    .price-strip {{
+      border-top: 1px solid var(--line);
+      margin-top: 12px;
+      padding-top: 12px;
+    }}
     .session-toolbar {{ align-items: flex-start; }}
     .session-toolbar h2 {{ margin-top: 8px; }}
     .session-controls {{
@@ -199,6 +204,56 @@ def html_document(data: dict[str, Any]) -> str:
     .sessions.list .session-top {{ grid-column: 1 / -1; }}
     .sessions.list .session-metrics {{ grid-column: 1 / -1; }}
     .sessions.list .snippets {{ grid-column: 1 / -1; }}
+    .sessions.list .session-detail {{ grid-column: 1 / -1; }}
+    .detail-toggle {{
+      justify-self: start;
+      min-height: 36px;
+    }}
+    .session-detail {{
+      display: grid;
+      gap: 14px;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }}
+    .detail-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+    }}
+    .model-table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }}
+    .model-table th, .model-table td {{
+      border-bottom: 1px solid var(--line);
+      padding: 8px 6px;
+      text-align: left;
+      vertical-align: top;
+    }}
+    .model-table th {{ color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }}
+    .conversation {{
+      display: grid;
+      gap: 10px;
+      max-height: 560px;
+      overflow: auto;
+      padding-right: 4px;
+    }}
+    .turn {{
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      background: rgba(20, 184, 166, .06);
+      padding: 10px;
+    }}
+    .turn.assistant {{ border-left-color: var(--accent-2); background: rgba(56, 189, 248, .06); }}
+    .turn .text {{
+      margin-top: 6px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: #dce8f5;
+      font-size: 13px;
+    }}
     .load-row {{ margin-top: 16px; }}
     .muted {{ color: var(--muted); }}
     .footer-note {{ margin-top: 18px; color: var(--muted); font-size: 12px; }}
@@ -221,6 +276,11 @@ def html_document(data: dict[str, Any]) -> str:
     <nav class="main-tabs" id="mainTabs" aria-label="Report sections"></nav>
     <section class="tab-panel active" data-panel="usage">
       <div class="panel">
+        <h2>Model mix</h2>
+        <div id="modelMix" class="model-grid"></div>
+        <div class="footer-note" id="modelPriceNote"></div>
+      </div>
+      <div class="panel">
         <div class="toolbar">
           <div class="tabs" id="periodTabs"></div>
           <div class="tabs" id="metricTabs"></div>
@@ -232,12 +292,6 @@ def html_document(data: dict[str, Any]) -> str:
       <div class="panel">
         <h2>Usage curve</h2>
         <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
-      </div>
-    </section>
-    <section class="tab-panel" data-panel="models">
-      <div class="panel">
-        <h2>Model mix</h2>
-        <div id="modelMix" class="model-grid"></div>
       </div>
     </section>
     <section class="tab-panel" data-panel="sessions">
@@ -262,7 +316,7 @@ def html_document(data: dict[str, Any]) -> str:
         <div class="muted" id="sessionCount"></div>
         <div id="sessions" class="sessions cards"></div>
         <div class="load-row"><button id="loadMore">Load more</button></div>
-        <div class="footer-note">Generated as a standalone local HTML file. Embedded snippets may contain private conversation data.</div>
+        <div class="footer-note" id="archiveNote">Generated as a standalone local HTML file. Embedded snippets may contain private conversation data.</div>
       </div>
     </section>
   </main>
@@ -279,7 +333,8 @@ def html_document(data: dict[str, Any]) -> str:
       view: 'cards',
       sort: 'recent',
       query: '',
-      limit: 80
+      limit: 80,
+      expanded: new Set()
     }};
     const palette = ['#38bdf8', '#14b8a6', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#f97316', '#0ea5e9', '#10b981'];
     let barHits = [];
@@ -304,6 +359,13 @@ def html_document(data: dict[str, Any]) -> str:
       if (abs >= 1e3) return sign + '$' + (abs / 1e3).toFixed(2) + 'K';
       return sign + '$' + abs.toFixed(2);
     }}
+    function priceMoney(n) {{
+      if (n === undefined || n === null || Number.isNaN(Number(n))) return 'n/a';
+      const value = Number(n);
+      if (Math.abs(value) >= 1) return '$' + value.toFixed(2);
+      if (Math.abs(value) >= .01) return '$' + value.toFixed(3);
+      return '$' + value.toFixed(4);
+    }}
     function metricFmt(metric, value) {{
       return metric === 'costUSD' ? compactMoney(value) : fmt(value);
     }}
@@ -327,7 +389,6 @@ def html_document(data: dict[str, Any]) -> str:
     function renderMainTabs() {{
       const tabs = [
         {{id: 'usage', label: 'Usage'}},
-        {{id: 'models', label: 'Models'}},
         {{id: 'sessions', label: `Sessions (${fmt((DATA.sessions || []).length)})`}}
       ];
       const el = document.getElementById('mainTabs');
@@ -509,7 +570,16 @@ def html_document(data: dict[str, Any]) -> str:
       let sessions = (DATA.sessions || []).filter(bucketMatchesSession);
       if (q) {{
         sessions = sessions.filter(s => {{
-          const hay = [s.title, s.agentName, s.sessionId, s.sessionFile, ...(s.modelNames || []), ...((s.snippets || []).map(x => x.text))].join(' ').toLowerCase();
+          const hay = [
+            s.title,
+            s.agentName,
+            s.sessionId,
+            s.sessionFile,
+            s.transcriptPath,
+            ...(s.modelNames || []),
+            ...((s.snippets || []).map(x => x.text)),
+            ...((s.conversation || []).map(x => x.text))
+          ].join(' ').toLowerCase();
           return hay.includes(q);
         }});
       }}
@@ -521,14 +591,93 @@ def html_document(data: dict[str, Any]) -> str:
       }});
       return sessions;
     }}
+    function sessionKey(s) {{
+      return String(s.reportSessionId || s.sessionId || s.sessionFile || s.title || '');
+    }}
+    function metricBlock(label, value) {{
+      return `<div class="metric-mini"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`;
+    }}
+    function modelPrice(model) {{
+      return (((DATA.modelPrices || {{}}).models || {{}})[model]) || null;
+    }}
+    function priceBlocks(price) {{
+      if (!price || price.source === 'unavailable') {{
+        return '<div class="price-strip muted">Current price unavailable.</div>';
+      }}
+      const blocks = [
+        ['Input', priceMoney(price.input)],
+        ['Output', priceMoney(price.output)],
+        ['Cache hit', priceMoney(price.cacheRead)]
+      ];
+      if (price.cacheCreation !== undefined && price.cacheCreation !== null) blocks.push(['Cache write', priceMoney(price.cacheCreation)]);
+      return `<div class="price-strip">
+        <div class="meta">Current price · ${esc(price.unit || 'USD per 1M tokens')} · ${esc(price.source || '')}</div>
+        <div class="model-metrics">${blocks.map(([label, value]) => metricBlock(label, value)).join('')}</div>
+      </div>`;
+    }}
+    function modelRows(models) {{
+      const entries = Object.entries(models || {{}});
+      if (!entries.length) return '<div class="muted">No per-model breakdown available.</div>';
+      return `<table class="model-table">
+        <thead><tr><th>Model</th><th>Total</th><th>Input</th><th>Output</th><th>Reasoning</th><th>Cache</th><th>Context</th><th>Cost</th></tr></thead>
+        <tbody>${entries.map(([name, m]) => `<tr>
+          <td>${esc(name)}</td>
+          <td>${fmt(m.totalTokens)}</td>
+          <td>${fmt(m.inputTokens)}</td>
+          <td>${fmt(m.outputTokens)}</td>
+          <td>${fmt(m.reasoningOutputTokens)}</td>
+          <td>${fmt(Number(m.cacheCreationTokens || 0) + Number(m.cacheReadTokens || 0))}</td>
+          <td>${fmt(m.contextTokens)}</td>
+          <td>${money(m.costUSD)}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }}
+    function conversationHtml(s) {{
+      const turns = s.conversation || [];
+      if (!turns.length) {{
+        return '<div class="muted">No full transcript available for this session. Codex sessions include full local conversation when the JSONL file can be located.</div>';
+      }}
+      return `<div class="conversation">${turns.map(turn => `<div class="turn ${turn.role === 'assistant' ? 'assistant' : ''}">
+        <div class="meta"><b>${esc(turn.role)}</b><span>${esc(turn.time || '')}</span><span>${fmt(turn.chars)} chars</span></div>
+        <div class="text">${esc(turn.text)}</div>
+      </div>`).join('')}</div>`;
+    }}
+    function sessionDetailHtml(s) {{
+      const detailMetrics = [
+        ['Total', fmt(s.totalTokens)],
+        ['Input', fmt(s.inputTokens)],
+        ['Output', fmt(s.outputTokens)],
+        ['Reasoning', fmt(s.reasoningOutputTokens)],
+        ['Cache create', fmt(s.cacheCreationTokens)],
+        ['Cache read', fmt(s.cacheReadTokens)],
+        ['Context', fmt(s.contextTokens)],
+        ['Generation', fmt(s.generationTokens)],
+        ['Cost', money(s.costUSD)]
+      ].map(([label, value]) => metricBlock(label, value)).join('');
+      return `<div class="session-detail">
+        <div class="detail-grid">${detailMetrics}</div>
+        <div>
+          <h3>Models</h3>
+          ${modelRows(s.models)}
+        </div>
+        <div>
+          <h3>Conversation</h3>
+          ${conversationHtml(s)}
+        </div>
+        ${s.transcriptPath ? `<div class="meta">Transcript: ${esc(s.transcriptPath)}</div>` : ''}
+      </div>`;
+    }}
     function sessionHtml(s) {{
       const snippets = (s.snippets || []).slice(0, 4).map(sn => `<div class="snippet ${sn.role === 'assistant' ? 'assistant' : ''}"><b>${esc(sn.role)}:</b> ${esc(sn.text)}</div>`).join('');
       const models = (s.modelNames || []).join(', ') || 'model n/a';
+      const key = sessionKey(s);
+      const isExpanded = state.expanded.has(key);
       const metrics = [
         ['Total', fmt(s.totalTokens)],
         ['Input', fmt(s.inputTokens)],
         ['Output', fmt(s.outputTokens)],
         ['Reasoning', fmt(s.reasoningOutputTokens)],
+        ['Context', fmt(s.contextTokens)],
         ['Cost', money(s.costUSD)]
       ].map(([label, value]) => `<div class="metric-mini"><div class="label">${label}</div><div class="value">${value}</div></div>`).join('');
       return `<article class="session-card">
@@ -545,6 +694,8 @@ def html_document(data: dict[str, Any]) -> str:
         </div>
         <div class="session-metrics">${metrics}</div>
         <div class="snippets">${snippets || '<span class="muted">No transcript snippets embedded.</span>'}</div>
+        <button class="detail-toggle" data-session-key="${esc(key)}">${isExpanded ? 'Hide details' : 'Show details'}</button>
+        ${isExpanded ? sessionDetailHtml(s) : ''}
       </article>`;
     }}
     function renderSessions() {{
@@ -556,6 +707,12 @@ def html_document(data: dict[str, Any]) -> str:
       document.getElementById('cardsBtn').classList.toggle('active', state.view === 'cards');
       document.getElementById('listBtn').classList.toggle('active', state.view === 'list');
       container.innerHTML = sessions.slice(0, state.limit).map(sessionHtml).join('');
+      container.querySelectorAll('.detail-toggle').forEach(btn => btn.onclick = () => {{
+        const key = btn.dataset.sessionKey;
+        if (state.expanded.has(key)) state.expanded.delete(key);
+        else state.expanded.add(key);
+        renderSessions();
+      }});
       document.getElementById('loadMore').style.display = sessions.length > state.limit ? 'inline-flex' : 'none';
     }}
     function renderSummary() {{
@@ -574,6 +731,30 @@ def html_document(data: dict[str, Any]) -> str:
       const agentLabel = DATA.agentInput && DATA.agentInput !== DATA.agent ? `${DATA.agentInput} -> ${DATA.agent}` : DATA.agent;
       document.getElementById('reportMeta').textContent = `${agentLabel} usage, ${range}. Generated ${DATA.generatedAt}.`;
     }}
+    function renderArchiveNote() {{
+      const archive = DATA.archive || {{}};
+      const lines = ['Generated as a standalone local HTML file. Embedded snippets may contain private conversation data.'];
+      if (archive.url) lines.push('URL: ' + archive.url);
+      if (archive.htmlPath) lines.push('HTML: ' + archive.htmlPath);
+      if (archive.directory) lines.push('Archive: ' + archive.directory);
+      document.getElementById('archiveNote').innerHTML = lines.map(esc).join('<br>');
+    }}
+    function renderModelPriceNote() {{
+      const pricing = DATA.modelPrices || {{}};
+      const sources = pricing.sources || [];
+      const ok = sources.filter(s => s.status === 'ok').map(s => s.name).join(', ');
+      const unavailable = (DATA.models || []).filter(model => {{
+        const price = modelPrice(model);
+        return !price || price.source === 'unavailable';
+      }});
+      const lines = [];
+      if (ok) lines.push('Model prices are best-effort current rates fetched from: ' + ok + '.');
+      else lines.push('Model prices are unavailable for this report.');
+      if (unavailable.length) lines.push('No price match for: ' + unavailable.join(', ') + '.');
+      lines.push('Per-model costs are estimated from these rates when ccusage does not provide model-level cost.');
+      lines.push('Price unit: USD per 1M tokens. Cache hit means cached input/cache read.');
+      document.getElementById('modelPriceNote').innerHTML = lines.map(esc).join('<br>');
+    }}
     function renderModelMix() {{
       const models = DATA.models || [];
       const totals = new Map(models.map(m => [m, {{
@@ -581,6 +762,10 @@ def html_document(data: dict[str, Any]) -> str:
         inputTokens: 0,
         outputTokens: 0,
         reasoningOutputTokens: 0,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
+        contextTokens: 0,
+        generationTokens: 0,
         costUSD: null
       }}]));
       function addUsage(target, source) {{
@@ -588,6 +773,10 @@ def html_document(data: dict[str, Any]) -> str:
         target.inputTokens += Number(source.inputTokens || 0);
         target.outputTokens += Number(source.outputTokens || 0);
         target.reasoningOutputTokens += Number(source.reasoningOutputTokens || 0);
+        target.cacheCreationTokens += Number(source.cacheCreationTokens || 0);
+        target.cacheReadTokens += Number(source.cacheReadTokens || 0);
+        target.contextTokens += Number(source.contextTokens || 0);
+        target.generationTokens += Number(source.generationTokens || 0);
         if (source.costUSD !== undefined && source.costUSD !== null && !Number.isNaN(Number(source.costUSD))) {{
           target.costUSD = Number(target.costUSD || 0) + Number(source.costUSD);
         }}
@@ -606,11 +795,14 @@ def html_document(data: dict[str, Any]) -> str:
               ['Input', fmt(totals.get(model).inputTokens)],
               ['Output', fmt(totals.get(model).outputTokens)],
               ['Reasoning', fmt(totals.get(model).reasoningOutputTokens)],
+              ['Context', fmt(totals.get(model).contextTokens)],
               ['Cost', money(totals.get(model).costUSD)]
             ].map(([label, value]) => `<div class="metric-mini"><div class="label">${label}</div><div class="value">${value}</div></div>`).join('')}
           </div>
+          ${priceBlocks(modelPrice(model))}
           <div class="bar"><span style="width:${Math.max(2, 100 * totals.get(model).totalTokens / max)}%"></span></div>
         </div>`).join('') : '<div class="muted">No model data found.</div>';
+      renderModelPriceNote();
     }}
     function renderAll() {{
       renderMainTabs();
@@ -621,6 +813,7 @@ def html_document(data: dict[str, Any]) -> str:
       renderSessionFilter();
       renderModelMix();
       renderSessions();
+      renderArchiveNote();
       if (state.activeTab === 'usage') {{
         window.requestAnimationFrame(() => {{ drawBarChart(); drawLineChart(); }});
       }}

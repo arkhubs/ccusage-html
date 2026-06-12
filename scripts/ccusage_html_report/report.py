@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,25 @@ METRIC_LABELS = {
 }
 
 COST_FIELDS = ("costUSD", "totalCost", "cost")
+PRICE_UNIT_SCALE = 1_000_000
+PRICING_TIMEOUT_SECONDS = 5
+MODELS_DEV_URL = "https://models.dev/api.json"
+LITELLM_PRICING_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+MODEL_COST_RATE_FIELDS = (
+    ("inputTokens", "input"),
+    ("outputTokens", "output"),
+    ("cacheCreationTokens", "cacheCreation"),
+    ("cacheReadTokens", "cacheRead"),
+)
+
+
+def add_derived_fields(entry: dict[str, Any]) -> None:
+    entry["contextTokens"] = (
+        number(entry.get("inputTokens"))
+        + number(entry.get("cacheCreationTokens"))
+        + number(entry.get("cacheReadTokens"))
+    )
+    entry["generationTokens"] = number(entry.get("outputTokens")) + number(entry.get("reasoningOutputTokens"))
 
 
 def list_from_payload(payload: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
@@ -54,6 +75,220 @@ def number(value: Any) -> float:
         except ValueError:
             return 0
     return 0
+
+
+def optional_number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.replace(",", ""))
+        except ValueError:
+            return None
+    return None
+
+
+def fetch_json(url: str, timeout: int = PRICING_TIMEOUT_SECONDS) -> Any:
+    request = urllib.request.Request(url, headers={"User-Agent": "ccusage-html-report/0.0"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return json.loads(response.read().decode(charset, errors="replace"))
+
+
+def normalize_price_entry(
+    *,
+    model: str,
+    source: str,
+    source_url: str,
+    input_per_million: float | None,
+    output_per_million: float | None,
+    cache_creation_per_million: float | None,
+    cache_read_per_million: float | None,
+    max_input_tokens: float | None = None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "matchedModel": model,
+        "source": source,
+        "sourceUrl": source_url,
+        "unit": "USD per 1M tokens",
+    }
+    if input_per_million is not None:
+        entry["input"] = input_per_million
+    if output_per_million is not None:
+        entry["output"] = output_per_million
+    if cache_creation_per_million is not None:
+        entry["cacheCreation"] = cache_creation_per_million
+    if cache_read_per_million is not None:
+        entry["cacheRead"] = cache_read_per_million
+    if max_input_tokens is not None:
+        entry["maxInputTokens"] = max_input_tokens
+    return entry
+
+
+def models_dev_prices(payload: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return {}
+    prices: dict[str, dict[str, Any]] = {}
+    for provider in payload.values():
+        if not isinstance(provider, dict):
+            continue
+        models = provider.get("models")
+        if not isinstance(models, dict):
+            continue
+        for model, model_data in models.items():
+            if not isinstance(model_data, dict):
+                continue
+            cost = model_data.get("cost")
+            if not isinstance(cost, dict):
+                continue
+            limits = model_data.get("limit") if isinstance(model_data.get("limit"), dict) else {}
+            entry = normalize_price_entry(
+                model=str(model),
+                source="models.dev",
+                source_url=MODELS_DEV_URL,
+                input_per_million=optional_number(cost.get("input")),
+                output_per_million=optional_number(cost.get("output")),
+                cache_creation_per_million=optional_number(cost.get("cache_write")),
+                cache_read_per_million=optional_number(cost.get("cache_read")),
+                max_input_tokens=optional_number(limits.get("context") if isinstance(limits, dict) else None),
+            )
+            if any(key in entry for key in ("input", "output", "cacheCreation", "cacheRead")):
+                prices[str(model)] = entry
+    return prices
+
+
+def litellm_prices(payload: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return {}
+    prices: dict[str, dict[str, Any]] = {}
+    for model, values in payload.items():
+        if not isinstance(values, dict):
+            continue
+        entry = normalize_price_entry(
+            model=str(model),
+            source="LiteLLM",
+            source_url=LITELLM_PRICING_URL,
+            input_per_million=scale_token_price(values.get("input_cost_per_token")),
+            output_per_million=scale_token_price(values.get("output_cost_per_token")),
+            cache_creation_per_million=scale_token_price(values.get("cache_creation_input_token_cost")),
+            cache_read_per_million=scale_token_price(values.get("cache_read_input_token_cost")),
+            max_input_tokens=optional_number(values.get("max_input_tokens")),
+        )
+        if any(key in entry for key in ("input", "output", "cacheCreation", "cacheRead")):
+            prices[str(model)] = entry
+    return prices
+
+
+def scale_token_price(value: Any) -> float | None:
+    price = optional_number(value)
+    return price * PRICE_UNIT_SCALE if price is not None else None
+
+
+def find_pricing(model: str, price_map: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    if model in price_map:
+        return price_map[model]
+    wanted = model.strip().lower()
+    lower_map = {key.lower(): value for key, value in price_map.items()}
+    if wanted in lower_map:
+        return lower_map[wanted]
+    suffix_matches = [
+        value
+        for key, value in lower_map.items()
+        if key.rsplit("/", 1)[-1] == wanted
+    ]
+    if len(suffix_matches) == 1:
+        return suffix_matches[0]
+    return None
+
+
+def collect_model_pricing(models: list[str], disabled: bool = False) -> dict[str, Any]:
+    if disabled:
+        return {
+            "models": {},
+            "unit": "USD per 1M tokens",
+            "sources": [{"name": "pricing", "status": "disabled", "reason": "--no-cost was used"}],
+        }
+    if not models:
+        return {"models": {}, "unit": "USD per 1M tokens", "sources": []}
+
+    sources: list[dict[str, str]] = []
+    matched: dict[str, dict[str, Any]] = {}
+    source_loaders = (
+        ("models.dev", MODELS_DEV_URL, models_dev_prices),
+        ("LiteLLM", LITELLM_PRICING_URL, litellm_prices),
+    )
+    for name, url, parser in source_loaders:
+        try:
+            price_map = parser(fetch_json(url))
+        except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            sources.append({"name": name, "url": url, "status": "unavailable", "reason": str(exc)})
+            continue
+        sources.append({"name": name, "url": url, "status": "ok"})
+        for model in models:
+            if model in matched:
+                continue
+            price = find_pricing(model, price_map)
+            if price:
+                matched[model] = price
+        if len(matched) == len(models):
+            break
+
+    for model in models:
+        matched.setdefault(model, {"source": "unavailable", "unit": "USD per 1M tokens"})
+    return {"models": matched, "unit": "USD per 1M tokens", "sources": sources}
+
+
+def estimate_cost_usd(usage: dict[str, Any], price: dict[str, Any] | None) -> float | None:
+    if not isinstance(price, dict) or price.get("source") == "unavailable":
+        return None
+
+    total = 0.0
+    has_priced_tokens = False
+    for token_field, price_field in MODEL_COST_RATE_FIELDS:
+        tokens = number(usage.get(token_field))
+        if not tokens:
+            continue
+        rate = optional_number(price.get(price_field))
+        if rate is None:
+            return None
+        total += tokens * rate / PRICE_UNIT_SCALE
+        has_priced_tokens = True
+    return total if has_priced_tokens else 0.0
+
+
+def apply_model_cost_estimates(collection: list[dict[str, Any]], pricing: dict[str, Any]) -> None:
+    price_models = pricing.get("models")
+    if not isinstance(price_models, dict):
+        return
+
+    for item in collection:
+        models = item.get("models")
+        if not isinstance(models, dict) or not models:
+            continue
+
+        model_cost_total = 0.0
+        all_models_have_cost = True
+        for model, usage in models.items():
+            if not isinstance(usage, dict):
+                all_models_have_cost = False
+                continue
+            if not has_cost(usage):
+                estimated = estimate_cost_usd(usage, price_models.get(model))
+                if estimated is None:
+                    all_models_have_cost = False
+                else:
+                    usage["costUSD"] = estimated
+                    usage["costSource"] = "estimatedFromModelPrice"
+            if has_cost(usage):
+                model_cost_total += cost_number(usage)
+            else:
+                all_models_have_cost = False
+
+        if all_models_have_cost and not has_cost(item):
+            item["costUSD"] = model_cost_total
+            item["costSource"] = "estimatedFromModelPrice"
 
 
 def metadata_value(source: dict[str, Any], key: str) -> Any:
@@ -115,6 +350,7 @@ def normalize_models(models: Any) -> dict[str, dict[str, Any]]:
             if has_cost(values):
                 entry["costUSD"] = cost_number(values)
             fill_total_tokens(entry)
+            add_derived_fields(entry)
             entry["isFallback"] = bool(values.get("isFallback", False))
             normalized[str(model)] = entry
     return normalized
@@ -139,6 +375,7 @@ def normalize_model_breakdowns(model_breakdowns: Any) -> dict[str, dict[str, Any
             entry["costUSD"] = cost_number(entry) + cost_number(values)
     for entry in normalized.values():
         fill_total_tokens(entry)
+        add_derived_fields(entry)
     return normalized
 
 
@@ -163,6 +400,7 @@ def normalize_bucket(item: dict[str, Any], period: str) -> dict[str, Any]:
         bucket[field] = usage_number(item, field)
     if has_cost(item):
         bucket["costUSD"] = cost_number(item)
+    add_derived_fields(bucket)
     return bucket
 
 
@@ -292,13 +530,12 @@ def enrich_codex_session(
     path = codex_session_path(session, sessions_root)
     title = ""
     snippets: list[dict[str, str]] = []
+    conversation: list[dict[str, Any]] = []
 
     if path and path.exists():
         try:
             with path.open("r", encoding="utf-8", errors="replace") as handle:
                 for line in handle:
-                    if len(snippets) >= max_snippets and title:
-                        break
                     try:
                         event = json.loads(line)
                     except json.JSONDecodeError:
@@ -314,9 +551,18 @@ def enrich_codex_session(
                     text = extract_content_text(payload.get("content"))
                     if looks_like_context_noise(text):
                         continue
-                    compact = trim_text(text, max_chars)
+                    raw_text = text.strip()
+                    compact = trim_text(raw_text, max_chars)
                     if role == "user" and not title:
                         title = trim_text(re.sub(r"^[#>\-\s]+", "", compact), 96)
+                    conversation.append(
+                        {
+                            "role": str(role),
+                            "text": raw_text,
+                            "time": str(event.get("timestamp") or ""),
+                            "chars": len(raw_text),
+                        }
+                    )
                     if len(snippets) < max_snippets:
                         snippets.append(
                             {
@@ -333,6 +579,7 @@ def enrich_codex_session(
         title = trim_text(title, 96)
     session["title"] = title
     session["snippets"] = snippets
+    session["conversation"] = conversation
     session["transcriptPath"] = str(path) if path else ""
     return session
 
@@ -356,6 +603,10 @@ def normalize_session(
     session = dict(item)
     if not session.get("sessionId") and isinstance(item.get("period"), str):
         session["sessionId"] = item["period"]
+    session["reportSessionId"] = trim_text(
+        str(session.get("sessionId") or session.get("sessionFile") or session.get("period") or id(item)),
+        220,
+    )
     item_agent = session_agent_name(item, agent)
     session["agentName"] = item_agent
     models = normalize_item_models(item)
@@ -368,6 +619,7 @@ def normalize_session(
         session[field] = usage_number(item, field)
     if has_cost(item):
         session["costUSD"] = cost_number(item)
+    add_derived_fields(session)
 
     dt = parse_iso_datetime(item.get("lastActivity") or metadata_value(item, "lastActivity"))
     if dt:
@@ -386,21 +638,30 @@ def normalize_session(
     else:
         session.setdefault("title", str(item.get("sessionFile") or item.get("sessionId") or "Untitled session"))
         session.setdefault("snippets", [])
+        session.setdefault("conversation", [])
         session.setdefault("transcriptPath", "")
     return session
 
 
-def build_report_data(args: argparse.Namespace) -> dict[str, Any]:
-    daily_payload = run_ccusage(args, "daily")
-    monthly_payload = run_ccusage(args, "monthly")
-    session_payload = run_ccusage(args, "session")
+def collect_ccusage_payloads(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
+    payloads = {
+        "daily": run_ccusage(args, "daily"),
+        "monthly": run_ccusage(args, "monthly"),
+        "session": run_ccusage(args, "session"),
+    }
+    payloads["weekly"] = {} if args.agent == "codex" else run_ccusage(args, "weekly", required=False)
+    return payloads
+
+
+def build_report_data_from_payloads(args: argparse.Namespace, payloads: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    daily_payload = payloads.get("daily", {})
+    monthly_payload = payloads.get("monthly", {})
+    session_payload = payloads.get("session", {})
 
     daily = [normalize_bucket(item, "daily") for item in list_from_payload(daily_payload, "daily", "days")]
     monthly = [normalize_bucket(item, "monthly") for item in list_from_payload(monthly_payload, "monthly", "months")]
 
-    weekly_payload = {}
-    if args.agent != "codex":
-        weekly_payload = run_ccusage(args, "weekly", required=False)
+    weekly_payload = payloads.get("weekly", {})
     weekly_items = list_from_payload(weekly_payload, "weekly", "weeks")
     weekly = [normalize_bucket(item, "weekly") for item in weekly_items] if weekly_items else synthesize_weekly(daily)
 
@@ -422,6 +683,11 @@ def build_report_data(args: argparse.Namespace) -> dict[str, Any]:
     ]
 
     models = discover_models(daily, weekly, monthly, sessions)
+    model_prices = collect_model_pricing(models, disabled=bool(args.no_cost))
+    if not args.no_cost:
+        for collection in (daily, weekly, monthly, sessions):
+            apply_model_cost_estimates(collection, model_prices)
+
     totals = dict(daily_payload.get("totals") or session_payload.get("totals") or {})
     fallback_totals = aggregate_totals(daily or sessions)
     for field in TOKEN_FIELDS:
@@ -431,6 +697,7 @@ def build_report_data(args: argparse.Namespace) -> dict[str, Any]:
             totals[field] = usage_number(fallback_totals, field)
     if has_cost(totals) or has_cost(fallback_totals):
         totals["costUSD"] = cost_number(totals) if has_cost(totals) else cost_number(fallback_totals)
+    add_derived_fields(totals)
 
     return {
         "generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -438,9 +705,14 @@ def build_report_data(args: argparse.Namespace) -> dict[str, Any]:
         "agentInput": args.agent_input,
         "filters": {"since": args.since or "", "until": args.until or "", "timezone": args.timezone or ""},
         "models": models,
+        "modelPrices": model_prices,
         "metricLabels": METRIC_LABELS,
         "periods": {"daily": daily, "weekly": weekly, "monthly": monthly},
         "sessions": sessions,
         "totals": totals,
         "source": {"ccusageBin": args.ccusage_bin, "transcripts": not args.no_transcript, "agentSelector": args.agent_input},
     }
+
+
+def build_report_data(args: argparse.Namespace) -> dict[str, Any]:
+    return build_report_data_from_payloads(args, collect_ccusage_payloads(args))

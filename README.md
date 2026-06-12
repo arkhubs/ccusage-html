@@ -5,10 +5,15 @@ Generate a polished, interactive HTML dashboard from local `ccusage` token usage
 This project contains a Codex skill plus a standalone Python generator. The report includes:
 
 - Daily, weekly, and monthly token bar charts.
-- Grouped model bars plus a total series.
+- Grouped model bars plus a total series, including `all` mode model breakdowns.
+- Usage-first model mix cards with per-model token and cost totals.
+- Best-effort current model prices for input, output, cache hit, and cache write when models.dev or LiteLLM has a match.
+- Total cost metric alongside token metrics.
 - Clickable legend chips and bar-based session filtering.
 - Usage curve chart.
-- Session card/list views with Codex chat snippets when local transcripts are available.
+- Expandable session card/list views with token type, model breakdown, cost, context token, and Codex full-conversation details when local transcripts are available.
+- Persistent `reports/<timestamp>/` archives containing the HTML, normalized report data, raw ccusage JSON payloads, session records, and a manifest.
+- Console output that exposes the local URL and generated file/archive paths.
 - Optional local HTTP serving with `--serve`.
 
 ## Quick Start
@@ -17,11 +22,15 @@ This project contains a Codex skill plus a standalone Python generator. The repo
 uv run python .\scripts\generate_ccusage_report.py all --serve --port 8765
 ```
 
-Then open:
+The command prints the local URL plus the generated HTML and archive paths, for example:
 
 ```text
-http://127.0.0.1:8765/ccusage-report-*.html
+Report URL: http://127.0.0.1:8765/ccusage-report.html
+Report HTML: E:\Projects\Active\ccusage-html\reports\20260612-151530\ccusage-report.html
+Archive directory: E:\Projects\Active\ccusage-html\reports\20260612-151530
 ```
+
+By default, reports are kept under `reports/<timestamp>/` instead of a temporary directory.
 
 ## Examples
 
@@ -31,6 +40,7 @@ uv run python .\scripts\generate_ccusage_report.py codex --timezone Asia/Shangha
 uv run python .\scripts\generate_ccusage_report.py cc --offline --no-transcript
 uv run python .\scripts\generate_ccusage_report.py gemini --no-transcript
 uv run python .\scripts\generate_ccusage_report.py --agent codex --serve
+uv run python .\scripts\generate_ccusage_report.py all --reports-dir .\reports-archive
 ```
 
 Agent selection mirrors `ccusage`: omit the selector or use `all` for all detected agents, or put an agent command such as `codex`, `claude`, `cc`, `gemini`, `opencode`, or `qwen` before the other options. The older `--agent` option still works.
@@ -38,6 +48,12 @@ Agent selection mirrors `ccusage`: omit the selector or use `all` for all detect
 ## Wiki
 
 Project documentation lives in [`docs/wiki/v0.0.1.md`](docs/wiki/v0.0.1.md).
+
+Latest v0.0.4 notes live in [`docs/wiki/v0.0.4.md`](docs/wiki/v0.0.4.md).
+
+v0.0.3 notes live in [`docs/wiki/v0.0.3.md`](docs/wiki/v0.0.3.md).
+
+v0.0.2 notes live in [`docs/wiki/v0.0.2.md`](docs/wiki/v0.0.2.md).
 
 ## Code Layout
 

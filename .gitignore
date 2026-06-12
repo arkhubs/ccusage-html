@@ -4,4 +4,5 @@ __pycache__/
 .env
 
 ccusage-report*.html
+reports/
 *.log

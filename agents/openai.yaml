@@ -1,0 +1,4 @@
+interface:
+  display_name: "ccusage HTML Report"
+  short_description: "Turn ccusage data into polished chart reports"
+  default_prompt: "Use $ccusage-html-report to generate a polished HTML dashboard from my ccusage data."

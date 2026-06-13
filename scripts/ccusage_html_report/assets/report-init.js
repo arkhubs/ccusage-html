@@ -76,4 +76,5 @@ window.addEventListener('resize', () => {
 });
 setupSessionFilterOptions();
 syncSessionFilterInputs();
+setupSessionDrawerResize();
 renderAll();

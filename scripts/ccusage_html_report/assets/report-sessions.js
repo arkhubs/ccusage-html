@@ -192,10 +192,30 @@ function messageContentHtml(text) {
   }
   return `<div class="text raw-text">${esc(text)}</div>`;
 }
+function setMessageRenderButtons() {
+  document.querySelectorAll('.render-mode-btn').forEach(btn => {
+    const active = btn.dataset.messageRenderMode === state.messageRenderMode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  });
+}
 function messageRenderSwitchHtml() {
   return `<div class="message-render-switch" role="group" aria-label="Conversation display mode">
     <button class="render-mode-btn ${state.messageRenderMode === 'raw' ? 'active' : ''}" data-message-render-mode="raw" aria-pressed="${state.messageRenderMode === 'raw'}">Raw</button>
     <button class="render-mode-btn ${state.messageRenderMode === 'markdown' ? 'active' : ''}" data-message-render-mode="markdown" aria-pressed="${state.messageRenderMode === 'markdown'}">Rendered</button>
+  </div>`;
+}
+function conversationHeaderControlsHtml(s) {
+  const turns = s.conversation || [];
+  if (!turns.length) return '';
+  const visible = Math.min(turns.length, conversationLimit(s));
+  const remaining = Math.max(0, turns.length - visible);
+  return `<div class="drawer-conversation-controls">
+    <div class="conversation-status">
+      <span class="conversation-count" data-total="${turns.length}">Showing ${fmt(visible)} of ${fmt(turns.length)} turns</span>
+      <span class="conversation-remaining">${remaining ? fmt(remaining) + ' more' : 'Complete'}</span>
+    </div>
+    ${messageRenderSwitchHtml()}
   </div>`;
 }
 function turnHtml(turn) {
@@ -218,14 +238,7 @@ function conversationHtml(s) {
   const key = sessionKey(s);
   const visibleTurns = turns.slice(0, conversationLimit(s));
   const remaining = Math.max(0, turns.length - visibleTurns.length);
-  return `<div class="conversation-head">
-    <div class="conversation-status">
-      <span class="conversation-count" data-total="${turns.length}">Showing ${fmt(visibleTurns.length)} of ${fmt(turns.length)} turns</span>
-      <span class="conversation-remaining">${remaining ? fmt(remaining) + ' more' : 'Complete'}</span>
-    </div>
-    ${messageRenderSwitchHtml()}
-  </div>
-  <div class="conversation" data-session-key="${esc(key)}" data-visible="${visibleTurns.length}" data-total="${turns.length}">${visibleTurns.map(turnHtml).join('')}</div>
+  return `<div class="conversation" data-session-key="${esc(key)}" data-visible="${visibleTurns.length}" data-total="${turns.length}">${visibleTurns.map(turnHtml).join('')}</div>
   ${remaining ? `<div class="load-row conversation-load-row"><button class="conversation-load" data-session-key="${esc(key)}">Load more turns</button></div>` : ''}`;
 }
 function sessionDetailHtml(s) {
@@ -249,6 +262,7 @@ function sessionDetailHtml(s) {
         <span>${esc(s.agentName || DATA.agent || '')}</span>
         <span>${esc(models)}</span>
       </div>
+      ${conversationHeaderControlsHtml(s)}
     </div>
     <button class="drawer-close" aria-label="Close session details">Close</button>
   </div>
@@ -318,7 +332,7 @@ function renderSessionDrawer(activeSession) {
     renderSessions();
   };
   bindConversationLoad(activeSession);
-  bindMessageRenderSwitch();
+  bindMessageRenderSwitch(activeSession);
 }
 function bindSessionCards(root) {
   root.querySelectorAll('.session-card').forEach(card => card.onclick = event => {
@@ -357,7 +371,7 @@ function bindConversationLoad(activeSession) {
   if (!loadConversation) return;
   loadConversation.onclick = () => appendConversationTurns(activeSession);
 }
-function bindMessageRenderSwitch() {
+function bindMessageRenderSwitch(activeSession) {
   document.querySelectorAll('.render-mode-btn').forEach(btn => btn.onclick = () => {
     const mode = btn.dataset.messageRenderMode === 'markdown' ? 'markdown' : 'raw';
     if (state.messageRenderMode === mode) return;
@@ -365,7 +379,26 @@ function bindMessageRenderSwitch() {
     try {
       window.localStorage.setItem('ccusage.messageRenderMode', mode);
     } catch (_) {}
-    renderSessions();
+    updateConversationRenderMode(activeSession);
+  });
+}
+function updateConversationRenderMode(activeSession) {
+  const drawer = document.getElementById('sessionDrawer');
+  const drawerScroll = drawer.querySelector('.drawer-scroll');
+  const conversation = drawer.querySelector('.conversation');
+  if (!activeSession || !drawerScroll || !conversation) return;
+
+  const maxBefore = Math.max(0, drawerScroll.scrollHeight - drawerScroll.clientHeight);
+  const progress = maxBefore ? drawerScroll.scrollTop / maxBefore : 0;
+  const visible = Number(conversation.dataset.visible || conversationLimit(activeSession));
+  const turns = (activeSession.conversation || []).slice(0, visible);
+
+  setMessageRenderButtons();
+  conversation.innerHTML = turns.map(turnHtml).join('');
+
+  window.requestAnimationFrame(() => {
+    const maxAfter = Math.max(0, drawerScroll.scrollHeight - drawerScroll.clientHeight);
+    drawerScroll.scrollTop = maxAfter ? progress * maxAfter : 0;
   });
 }
 function appendConversationTurns(activeSession) {

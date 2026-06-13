@@ -313,7 +313,11 @@ body.resizing-session-drawer * { cursor: col-resize !important; }
   border-bottom: 1px solid var(--line);
   background: rgba(15, 23, 42, .9);
 }
-.drawer-title { min-width: 0; }
+.drawer-title {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
 .drawer-title h3 { margin: 0 0 8px; color: var(--strong); font-size: 17px; line-height: 1.35; }
 .drawer-close {
   flex: 0 0 auto;
@@ -377,7 +381,7 @@ body.resizing-session-drawer * { cursor: col-resize !important; }
   gap: 14px;
   padding: 2px 2px 6px;
 }
-.conversation-head {
+.drawer-conversation-controls {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -385,6 +389,7 @@ body.resizing-session-drawer * { cursor: col-resize !important; }
   color: var(--muted);
   font-size: 12px;
   flex-wrap: wrap;
+  padding-top: 2px;
 }
 .conversation-status { display: flex; gap: 10px; flex-wrap: wrap; }
 .message-render-switch {

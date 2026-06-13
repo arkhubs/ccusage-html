@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ccusage report</title>
+  <style>
+__REPORT_CSS__
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ccusage report</h1>
+    <div class="subhead" id="reportMeta"></div>
+    <section class="summary" id="summary"></section>
+  </header>
+  <main>
+    <nav class="main-tabs" id="mainTabs" aria-label="Report sections"></nav>
+    <section class="tab-panel active" data-panel="usage">
+      <div class="panel">
+        <h2>Model mix</h2>
+        <div id="modelMix" class="model-grid"></div>
+        <div class="footer-note" id="modelPriceNote"></div>
+      </div>
+      <div class="panel">
+        <div class="toolbar">
+          <div class="tabs" id="periodTabs"></div>
+          <div class="tabs" id="metricTabs"></div>
+        </div>
+        <div class="selection" id="selection"></div>
+        <div class="chips" id="legend"></div>
+        <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <h2>Usage curve</h2>
+        <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
+      </div>
+    </section>
+    <section class="tab-panel" data-panel="sessions">
+      <div class="panel">
+        <div class="toolbar session-toolbar">
+          <h2>Sessions</h2>
+          <div class="session-controls">
+            <input id="sessionSearch" placeholder="Search title, agent, model, or transcript">
+            <select id="sessionSort">
+              <option value="recent">Recent first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="tokens">Tokens high to low</option>
+              <option value="cost">Cost high to low</option>
+              <option value="title">Title A to Z</option>
+            </select>
+            <div class="view-switch">
+              <button id="cardsBtn" class="active">Cards</button>
+              <button id="listBtn">List</button>
+            </div>
+            <div class="session-filters">
+              <select id="sessionAgent" aria-label="Filter by agent"></select>
+              <select id="sessionModel" aria-label="Filter by model"></select>
+              <select id="sessionTranscript" aria-label="Filter by transcript">
+                <option value="all">All transcripts</option>
+                <option value="with">With transcript</option>
+                <option value="without">No transcript</option>
+              </select>
+              <div class="date-filter">
+                <input id="sessionFrom" type="date" title="From date" aria-label="From date">
+                <input id="sessionTo" type="date" title="To date" aria-label="To date">
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="selection" id="sessionFilter"></div>
+        <div class="muted" id="sessionCount"></div>
+        <div class="sessions-shell">
+          <div class="sessions-main">
+            <div id="sessions" class="sessions cards"></div>
+            <div class="load-row"><button id="loadMore">Load more</button></div>
+          </div>
+          <div id="sessionDrawerResizer" class="drawer-resizer" role="separator" aria-label="Resize session details" aria-orientation="vertical" aria-controls="sessionDrawer" tabindex="0"></div>
+          <aside id="sessionDrawer" class="session-drawer empty" aria-label="Session details"></aside>
+        </div>
+        <div class="footer-note" id="archiveNote">Generated as a standalone local HTML file. Embedded snippets may contain private conversation data.</div>
+      </div>
+    </section>
+  </main>
+  <script id="report-data" type="application/json">__REPORT_DATA_JSON__</script>
+  <script>
+__REPORT_JS__
+  </script>
+</body>
+</html>

@@ -55,7 +55,11 @@ Agent selection mirrors `ccusage`: omit the selector or use `all` for all detect
 
 Project documentation lives in [`docs/wiki/v0.0.1.md`](docs/wiki/v0.0.1.md).
 
-Latest v0.0.7 notes live in [`docs/wiki/v0.0.7.md`](docs/wiki/v0.0.7.md).
+Latest v0.0.9 notes live in [`docs/wiki/v0.0.9.md`](docs/wiki/v0.0.9.md).
+
+v0.0.8 notes live in [`docs/wiki/v0.0.8.md`](docs/wiki/v0.0.8.md).
+
+v0.0.7 notes live in [`docs/wiki/v0.0.7.md`](docs/wiki/v0.0.7.md).
 
 v0.0.6 notes live in [`docs/wiki/v0.0.6.md`](docs/wiki/v0.0.6.md).
 
@@ -73,8 +77,12 @@ v0.0.2 notes live in [`docs/wiki/v0.0.2.md`](docs/wiki/v0.0.2.md).
 - `scripts/ccusage_html_report/app.py` coordinates generation, output paths, and local serving.
 - `scripts/ccusage_html_report/cli.py` handles argument parsing.
 - `scripts/ccusage_html_report/ccusage.py` handles agent aliases, command building, and JSON execution.
-- `scripts/ccusage_html_report/report.py` normalizes usage data, sessions, totals, and Codex snippets.
-- `scripts/ccusage_html_report/html.py` renders the standalone HTML document.
+- `scripts/ccusage_html_report/report.py` coordinates report data assembly.
+- `scripts/ccusage_html_report/metrics.py` normalizes token/cost fields, model breakdowns, periods, and totals.
+- `scripts/ccusage_html_report/pricing.py` fetches and applies best-effort model price metadata.
+- `scripts/ccusage_html_report/sessions.py` enriches session rows with titles, transcript snippets, and sorting fields.
+- `scripts/ccusage_html_report/dates.py` centralizes date parsing and week labels.
+- `scripts/ccusage_html_report/html.py` renders the standalone HTML document from resources in `scripts/ccusage_html_report/assets/`.
 
 ## Notes
 

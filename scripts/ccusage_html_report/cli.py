@@ -51,6 +51,10 @@ def parse_args() -> argparse.Namespace:
         help="Override the Codex sessions directory. Defaults to ~/.codex/sessions.",
     )
     parser.add_argument(
+        "--gemini-sessions-dir",
+        help="Override the Gemini sessions directory. Defaults to ~/.gemini/tmp.",
+    )
+    parser.add_argument(
         "--max-snippets-per-session",
         type=int,
         default=6,

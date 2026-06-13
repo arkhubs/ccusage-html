@@ -12,7 +12,7 @@ This project contains a Codex skill plus a standalone Python generator. The repo
 - Clickable legend chips and bar-based session filtering.
 - Usage curve chart.
 - Icon-only dark/light theme toggle with persisted browser preference.
-- Session card/list views with a right-side detail drawer for token type, model breakdown, cost, context token, and Codex chat-style full-conversation details when local transcripts are available.
+- Session card/list views with a right-side detail drawer for token type, model breakdown, cost, context token, and local transcript details for Codex and Gemini sessions when available.
 - Persistent `reports/<timestamp>/` archives containing the HTML, normalized report data, raw ccusage JSON payloads, session records, and a manifest.
 - Console output that exposes the local URL immediately, then generated file/archive paths when ready.
 - Optional local HTTP serving with `--serve`.
@@ -43,7 +43,7 @@ The local URL is available only while the `--serve` process is running. If the p
 uv run python .\scripts\generate_ccusage_report.py codex --since 2026-06-01 --until 2026-06-30 --output .\ccusage-report.html
 uv run python .\scripts\generate_ccusage_report.py codex --timezone Asia/Shanghai --speed auto
 uv run python .\scripts\generate_ccusage_report.py cc --offline --no-transcript
-uv run python .\scripts\generate_ccusage_report.py gemini --no-transcript
+uv run python .\scripts\generate_ccusage_report.py gemini
 uv run python .\scripts\generate_ccusage_report.py --agent codex --serve
 uv run python .\scripts\generate_ccusage_report.py all --reports-dir .\reports-archive
 ```
@@ -56,7 +56,9 @@ Agent selection mirrors `ccusage`: omit the selector or use `all` for all detect
 
 Project documentation lives in [`docs/wiki/v0.0.1.md`](docs/wiki/v0.0.1.md).
 
-Latest v0.0.11 notes live in [`docs/wiki/v0.0.11.md`](docs/wiki/v0.0.11.md).
+Latest v0.0.12 notes live in [`docs/wiki/v0.0.12.md`](docs/wiki/v0.0.12.md).
+
+v0.0.11 notes live in [`docs/wiki/v0.0.11.md`](docs/wiki/v0.0.11.md).
 
 v0.0.10 notes live in [`docs/wiki/v0.0.10.md`](docs/wiki/v0.0.10.md).
 
@@ -85,10 +87,11 @@ v0.0.2 notes live in [`docs/wiki/v0.0.2.md`](docs/wiki/v0.0.2.md).
 - `scripts/ccusage_html_report/report.py` coordinates report data assembly.
 - `scripts/ccusage_html_report/metrics.py` normalizes token/cost fields, model breakdowns, periods, and totals.
 - `scripts/ccusage_html_report/pricing.py` fetches and applies best-effort model price metadata.
-- `scripts/ccusage_html_report/sessions.py` enriches session rows with titles, transcript snippets, and sorting fields.
+- `scripts/ccusage_html_report/sessions.py` normalizes ccusage session rows, titles, and sorting fields.
+- `scripts/ccusage_html_report/transcripts.py` provides the shared transcript provider registry plus Codex and Gemini local transcript parsers.
 - `scripts/ccusage_html_report/dates.py` centralizes date parsing and week labels.
 - `scripts/ccusage_html_report/html.py` renders the standalone HTML document from resources in `scripts/ccusage_html_report/assets/`.
 
 ## Notes
 
-Transcript enrichment is currently strongest for Codex because `ccusage codex session --json` maps to local `~/.codex/sessions/**.jsonl` files. Generated reports may embed private snippets, so treat output HTML files as local/private unless intentionally shared.
+Transcript enrichment reads local Codex `~/.codex/sessions/**.jsonl` files and Gemini `~/.gemini/tmp/**/chats/session-*.json*` files when they can be matched to `ccusage session --json` IDs. Conversation drawers may include user/assistant turns plus compact tool-call and command-output context, so treat output HTML files as local/private unless intentionally shared.

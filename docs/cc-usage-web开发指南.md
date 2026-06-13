@@ -9,6 +9,7 @@
 - [x] 模块化代码，要高内聚低耦合
 	- [x] 1. 不只是支持 codex，支持和 ccusage 一样灵活的，开始的时候指定全部、codex、cc、gemijni……
 		- [x] 通过all 启动的话，现在能支持在聚合的 html视图里分模型查看吗？
+		- [x] session transcript 解析拆成 provider registry，后续兼容更多 agent 软件时复用共享框架
 	- [x] 2. 除了 Total tokens Input Output Reasoning 这些以外，再来一列 cost（只做一个 total 的）
 	- [x] 3. 页面全挤在一起了，可以做成分 tab 的布局。
 		- [x] 其中 sessions 页面单独一个 tab，每个 session 的信息展示就不用那么紧凑了；其菜单应该在各条记录上方作为主控
@@ -19,8 +20,10 @@
 			- [x] 1. session 之间的界限不清，展开一个后排版更乱
 			- [x] 2. 建议增加 session 卡片、列表项之间的界限感，而不是糊成一团
 			- [x] 3. 详细信息和详细对话展示建议作为一个侧边栏，其对话过程模拟 dsktop 聊天 Agent app 的样式来显示
-			- [ ] 聊天记录读取只能读到这个程度了吗？执行的命令、调用的工具等更多上下文无法读取了吗
-			- [ ] gemini 会话的时间都是 unkown，会话内容也无法读取，有办法修复吗
+			- [x] 聊天记录读取只能读到这个程度了吗？执行的命令、调用的工具等更多上下文无法读取了吗
+				- [ ] 选择性展开 tool call。按钮可调，位置不重置，就像 render/raw 一样
+				- [ ] tool call 的结果能读到？能的话通过点击气泡展开/收起这个 call 的结果
+			- [x] gemini 会话的时间都是 unkown，会话内容也无法读取，有办法修复吗
 			- [x] 目前 session 的排序还是假的，初始也没有按时间倒序
 			- [x] 会话聊天记录可以改成允许 load more 的动态加载吗？
 				- [x] 可以多次load 直到最后，不要截断。而且 load 完不要刷新整个

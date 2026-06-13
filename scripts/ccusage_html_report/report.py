@@ -54,17 +54,8 @@ from .pricing import (
     normalize_price_entry,
     scale_token_price,
 )
-from .sessions import (
-    codex_session_path,
-    enrich_codex_session,
-    extract_content_text,
-    looks_like_context_noise,
-    normalize_session,
-    session_agent_name,
-    session_datetime,
-    sort_sessions_recent_first,
-    trim_text,
-)
+from .sessions import normalize_session, sort_sessions_recent_first
+from .transcripts import build_transcript_registry
 
 
 def synthesize_weekly(daily_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -105,16 +96,19 @@ def build_report_data_from_payloads(args: argparse.Namespace, payloads: dict[str
     weekly_items = list_from_payload(weekly_payload, "weekly", "weeks")
     weekly = [normalize_bucket(item, "weekly") for item in weekly_items] if weekly_items else synthesize_weekly(daily)
 
-    sessions_root = None
+    transcript_registry = None
     if not args.no_transcript:
-        sessions_root = Path(args.codex_sessions_dir).expanduser() if args.codex_sessions_dir else Path.home() / ".codex" / "sessions"
+        codex_sessions_root = Path(args.codex_sessions_dir).expanduser() if args.codex_sessions_dir else Path.home() / ".codex" / "sessions"
+        gemini_sessions_dir = getattr(args, "gemini_sessions_dir", None)
+        gemini_sessions_root = Path(gemini_sessions_dir).expanduser() if gemini_sessions_dir else Path.home() / ".gemini" / "tmp"
+        transcript_registry = build_transcript_registry(args.agent, codex_sessions_root, gemini_sessions_root)
 
     raw_sessions = list_from_payload(session_payload, "sessions", "session")
     sessions = [
         normalize_session(
             item,
             args.agent,
-            sessions_root,
+            transcript_registry,
             not args.no_transcript,
             args.max_snippets_per_session,
             args.max_snippet_chars,

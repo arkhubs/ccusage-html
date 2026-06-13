@@ -205,6 +205,11 @@ function messageRenderSwitchHtml() {
     <button class="render-mode-btn ${state.messageRenderMode === 'markdown' ? 'active' : ''}" data-message-render-mode="markdown" aria-pressed="${state.messageRenderMode === 'markdown'}">Rendered</button>
   </div>`;
 }
+function normalizedTurnRole(turn) {
+  const role = String(turn.role || '').toLowerCase();
+  if (role === 'assistant' || role === 'tool') return role;
+  return 'user';
+}
 function conversationHeaderControlsHtml(s) {
   const turns = s.conversation || [];
   if (!turns.length) return '';
@@ -219,9 +224,9 @@ function conversationHeaderControlsHtml(s) {
   </div>`;
 }
 function turnHtml(turn) {
-  const role = turn.role === 'assistant' ? 'assistant' : 'user';
-  const roleLabel = role === 'assistant' ? 'Agent' : 'You';
-  const avatar = role === 'assistant' ? 'AI' : 'You';
+  const role = normalizedTurnRole(turn);
+  const roleLabel = role === 'assistant' ? 'Agent' : role === 'tool' ? 'Tool' : 'You';
+  const avatar = role === 'assistant' ? 'AI' : role === 'tool' ? 'Tool' : 'You';
   return `<div class="turn ${role}">
     <div class="chat-avatar">${avatar}</div>
     <div class="chat-bubble">
@@ -233,7 +238,7 @@ function turnHtml(turn) {
 function conversationHtml(s) {
   const turns = s.conversation || [];
   if (!turns.length) {
-    return '<div class="muted">No full transcript available for this session. Codex sessions include full local conversation when the JSONL file can be located.</div>';
+    return '<div class="muted">No full transcript available for this session. Codex and Gemini sessions include local conversation when matching transcript files can be located.</div>';
   }
   const key = sessionKey(s);
   const visibleTurns = turns.slice(0, conversationLimit(s));
@@ -285,7 +290,10 @@ function sessionDetailHtml(s) {
   </div>`;
 }
 function sessionHtml(s) {
-  const snippets = (s.snippets || []).slice(0, 4).map(sn => `<div class="snippet ${sn.role === 'assistant' ? 'assistant' : ''}"><b>${esc(sn.role)}:</b> ${esc(sn.text)}</div>`).join('');
+  const snippets = (s.snippets || []).slice(0, 4).map(sn => {
+    const role = normalizedTurnRole(sn);
+    return `<div class="snippet ${role === 'assistant' ? 'assistant' : role === 'tool' ? 'tool' : ''}"><b>${esc(role)}:</b> ${esc(sn.text)}</div>`;
+  }).join('');
   const models = (s.modelNames || []).join(', ') || 'model n/a';
   const key = sessionKey(s);
   const isActive = state.activeSessionKey === key;

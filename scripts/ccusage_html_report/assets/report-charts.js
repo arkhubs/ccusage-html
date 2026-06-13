@@ -38,8 +38,8 @@ function setupCanvas(canvas) {
 }
 function drawGrid(ctx, x, y, w, h, max, formatter) {
   const formatValue = formatter || fmt;
-  ctx.strokeStyle = '#243244';
-  ctx.fillStyle = '#8fa1b8';
+  ctx.strokeStyle = cssVar('--line', '#243244');
+  ctx.fillStyle = cssVar('--muted', '#8fa1b8');
   ctx.font = '12px system-ui';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
@@ -62,7 +62,7 @@ function drawBarChart() {
   barHits = [];
   ctx.clearRect(0, 0, width, height);
   if (!buckets.length || !series.length) {
-    ctx.fillStyle = '#8fa1b8';
+    ctx.fillStyle = cssVar('--muted', '#8fa1b8');
     ctx.fillText('No data for this period.', pad.l, pad.t + 20);
     return;
   }
@@ -91,7 +91,7 @@ function drawBarChart() {
       ctx.save();
       ctx.translate(pad.l + i * groupW + groupW / 2, pad.t + plotH + 18);
       ctx.rotate(-Math.PI / 7);
-      ctx.fillStyle = '#8fa1b8';
+      ctx.fillStyle = cssVar('--muted', '#8fa1b8');
       ctx.font = '12px system-ui';
       ctx.textAlign = 'right';
       ctx.fillText(bucket.label, 0, 0);
@@ -109,7 +109,7 @@ function drawLineChart() {
   const lineSeries = state.selected && state.selected.series !== '__total' ? state.selected.series : '__total';
   ctx.clearRect(0, 0, width, height);
   if (!buckets.length) {
-    ctx.fillStyle = '#8fa1b8';
+    ctx.fillStyle = cssVar('--muted', '#8fa1b8');
     ctx.fillText('No data for this period.', pad.l, pad.t + 20);
     return;
   }
@@ -128,7 +128,7 @@ function drawLineChart() {
   values.forEach((v, i) => {
     const x = pad.l + (buckets.length === 1 ? plotW / 2 : plotW * i / (buckets.length - 1));
     const y = pad.t + plotH - plotH * v / max;
-    ctx.fillStyle = '#0b1220';
+    ctx.fillStyle = cssVar('--chart-point-bg', '#0b1220');
     ctx.strokeStyle = seriesColor(lineSeries, 0);
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -136,7 +136,7 @@ function drawLineChart() {
     ctx.fill();
     ctx.stroke();
   });
-  ctx.fillStyle = '#8fa1b8';
+  ctx.fillStyle = cssVar('--muted', '#8fa1b8');
   ctx.font = '12px system-ui';
   ctx.fillText(seriesLabel(lineSeries) + ' / ' + metricLabels[state.metric], pad.l, 16);
 }

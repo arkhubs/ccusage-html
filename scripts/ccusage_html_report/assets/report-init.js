@@ -74,6 +74,7 @@ window.addEventListener('resize', () => {
     if (state.activeTab === 'usage') { drawBarChart(); drawLineChart(); }
   }, 120);
 });
+setupThemeToggle();
 setupSessionFilterOptions();
 syncSessionFilterInputs();
 setupSessionDrawerResize();

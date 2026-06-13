@@ -4,13 +4,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ccusage report</title>
+  <script>
+    (function() {
+      var theme = 'dark';
+      try {
+        var stored = window.localStorage.getItem('ccusage.theme');
+        if (stored === 'light' || stored === 'dark') theme = stored;
+      } catch (_) {}
+      document.documentElement.dataset.theme = theme;
+    }());
+  </script>
   <style>
 __REPORT_CSS__
   </style>
 </head>
 <body>
   <header>
-    <h1>ccusage report</h1>
+    <div class="header-top">
+      <h1>ccusage report</h1>
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch color theme" title="Switch color theme">
+        <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2"></path>
+          <path d="M12 20v2"></path>
+          <path d="m4.93 4.93 1.41 1.41"></path>
+          <path d="m17.66 17.66 1.41 1.41"></path>
+          <path d="M2 12h2"></path>
+          <path d="M20 12h2"></path>
+          <path d="m6.34 17.66-1.41 1.41"></path>
+          <path d="m19.07 4.93-1.41 1.41"></path>
+        </svg>
+        <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3z"></path>
+        </svg>
+      </button>
+    </div>
     <div class="subhead" id="reportMeta"></div>
     <section class="summary" id="summary"></section>
   </header>

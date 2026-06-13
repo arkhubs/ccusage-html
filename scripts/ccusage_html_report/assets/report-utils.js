@@ -28,6 +28,10 @@ function priceMoney(n) {
 function metricFmt(metric, value) {
   return metric === 'costUSD' ? compactMoney(value) : fmt(value);
 }
+function cssVar(name, fallback) {
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }

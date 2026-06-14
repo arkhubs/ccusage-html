@@ -42,7 +42,7 @@ function filteredSessions() {
         s.lastActivityAt,
         ...(s.modelNames || []),
         ...((s.snippets || []).map(x => x.text)),
-        ...((s.conversation || []).map(x => x.text))
+        ...((s.conversation || []).flatMap(x => [x.text, x.toolName, x.toolResult]))
       ].join(' ').toLowerCase();
       return hay.includes(q);
     });
@@ -210,6 +210,47 @@ function normalizedTurnRole(turn) {
   if (role === 'assistant' || role === 'tool') return role;
   return 'user';
 }
+function toolTurnKey(sessionKeyValue, index) {
+  return `${sessionKeyValue}::${index}`;
+}
+function toolTextParts(turn) {
+  const text = String(turn.text || '').trim();
+  const explicitResult = String(turn.toolResult || '').trim();
+  if (explicitResult) return {summary: text || 'Tool call', result: explicitResult};
+
+  const match = text.match(/(?:^|\n)(?:Output|Result|Response):\s*/i);
+  if (match && text.slice(0, match.index).trim().startsWith('Tool call:')) {
+    const summary = text.slice(0, match.index).trim();
+    const result = text.slice(match.index + match[0].length).trim();
+    if (result) return {summary: summary || 'Tool call', result};
+  }
+  return {summary: text || 'Tool call', result: ''};
+}
+function trimToolPreviewLine(line, maxChars = 260) {
+  const text = String(line || '').trimEnd();
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars - 3).trimEnd() + '...';
+}
+function toolPreviewText(summary) {
+  const lines = String(summary || '').replace(/\r\n?/g, '\n').split('\n');
+  const prefixes = ['Tool call:', 'Command:', 'Workdir:', 'Description:', 'Status:'];
+  const preview = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (!preview.length || prefixes.some(prefix => trimmed.startsWith(prefix))) {
+      preview.push(trimToolPreviewLine(trimmed));
+    }
+    if (preview.length >= 4) break;
+  }
+  if (preview.length) return preview.join('\n');
+  return lines.slice(0, 3).map(line => trimToolPreviewLine(line)).join('\n').trim();
+}
+function toolSectionButtonHtml(turnKey, section, expanded) {
+  const isResult = section === 'result';
+  const text = isResult ? (expanded ? 'Hide result' : 'Show result') : (expanded ? 'Hide call' : 'Show call');
+  return `<button class="tool-section-toggle" type="button" data-tool-turn-key="${esc(turnKey)}" data-tool-section="${section}" aria-pressed="${expanded}">${text}</button>`;
+}
 function conversationHeaderControlsHtml(s) {
   const turns = s.conversation || [];
   if (!turns.length) return '';
@@ -223,8 +264,35 @@ function conversationHeaderControlsHtml(s) {
     ${messageRenderSwitchHtml()}
   </div>`;
 }
-function turnHtml(turn) {
+function toolTurnHtml(turn, index, sessionKeyValue) {
+  const turnKey = toolTurnKey(sessionKeyValue, index);
+  const parts = toolTextParts(turn);
+  const preview = toolPreviewText(parts.summary);
+  const hasCallDetails = preview && preview.trim() !== parts.summary.trim();
+  const hasResult = Boolean(parts.result);
+  const callExpanded = hasCallDetails ? state.expandedToolCalls.has(turnKey) : true;
+  const resultExpanded = hasResult && state.expandedToolResults.has(turnKey);
+  const defaultSection = hasResult ? 'result' : hasCallDetails ? 'call' : '';
+  const expandableAttrs = defaultSection
+    ? ` data-tool-turn-key="${esc(turnKey)}" data-default-tool-section="${defaultSection}" tabindex="0" aria-expanded="${defaultSection === 'result' ? resultExpanded : callExpanded}" title="${defaultSection === 'result' ? 'Toggle tool result' : 'Toggle tool call'}"`
+    : '';
+  const callButtons = hasCallDetails ? toolSectionButtonHtml(turnKey, 'call', callExpanded) : '';
+  const resultButtons = hasResult ? toolSectionButtonHtml(turnKey, 'result', resultExpanded) : '';
+  const resultChars = Number(turn.toolResultChars || parts.result.length || 0);
+  const toolName = turn.toolName ? `<span>${esc(turn.toolName)}</span>` : '';
+  return `<div class="turn tool ${defaultSection ? 'tool-expandable' : ''} ${callExpanded ? 'tool-call-expanded' : 'tool-call-collapsed'} ${resultExpanded ? 'tool-result-expanded' : 'tool-result-collapsed'}" data-tool-turn-key="${esc(turnKey)}">
+    <div class="chat-avatar">Tool</div>
+    <div class="chat-bubble"${expandableAttrs}>
+      <div class="chat-meta"><b>Tool</b>${toolName}<span>${esc(turn.time || '')}</span><span>${fmt(turn.chars)} chars</span>${hasResult ? `<span>${fmt(resultChars)} result chars</span>` : ''}${callButtons}${resultButtons}</div>
+      <div class="tool-call-preview ${callExpanded ? 'hidden' : ''}">${messageContentHtml(preview || parts.summary)}</div>
+      <div class="tool-call-full ${callExpanded ? '' : 'hidden'}">${messageContentHtml(parts.summary)}</div>
+      ${hasResult ? `<div class="tool-result ${resultExpanded ? '' : 'hidden'}"><div class="tool-result-label">Result</div>${messageContentHtml(parts.result)}</div>` : ''}
+    </div>
+  </div>`;
+}
+function turnHtml(turn, index = 0, sessionKeyValue = '') {
   const role = normalizedTurnRole(turn);
+  if (role === 'tool') return toolTurnHtml(turn, index, sessionKeyValue);
   const roleLabel = role === 'assistant' ? 'Agent' : role === 'tool' ? 'Tool' : 'You';
   const avatar = role === 'assistant' ? 'AI' : role === 'tool' ? 'Tool' : 'You';
   return `<div class="turn ${role}">
@@ -243,7 +311,7 @@ function conversationHtml(s) {
   const key = sessionKey(s);
   const visibleTurns = turns.slice(0, conversationLimit(s));
   const remaining = Math.max(0, turns.length - visibleTurns.length);
-  return `<div class="conversation" data-session-key="${esc(key)}" data-visible="${visibleTurns.length}" data-total="${turns.length}">${visibleTurns.map(turnHtml).join('')}</div>
+  return `<div class="conversation" data-session-key="${esc(key)}" data-visible="${visibleTurns.length}" data-total="${turns.length}">${visibleTurns.map((turn, index) => turnHtml(turn, index, key)).join('')}</div>
   ${remaining ? `<div class="load-row conversation-load-row"><button class="conversation-load" data-session-key="${esc(key)}">Load more turns</button></div>` : ''}`;
 }
 function sessionDetailHtml(s) {
@@ -341,6 +409,7 @@ function renderSessionDrawer(activeSession) {
   };
   bindConversationLoad(activeSession);
   bindMessageRenderSwitch(activeSession);
+  bindToolTurnToggles(activeSession);
 }
 function bindSessionCards(root) {
   root.querySelectorAll('.session-card').forEach(card => card.onclick = event => {
@@ -390,6 +459,81 @@ function bindMessageRenderSwitch(activeSession) {
     updateConversationRenderMode(activeSession);
   });
 }
+function toolTurnElement(turnKey) {
+  let found = null;
+  document.querySelectorAll('.turn.tool[data-tool-turn-key]').forEach(turn => {
+    if (turn.dataset.toolTurnKey === turnKey) found = turn;
+  });
+  return found;
+}
+function setToolSectionDom(turn, section, expanded) {
+  if (!turn) return;
+  if (section === 'call') {
+    turn.classList.toggle('tool-call-expanded', expanded);
+    turn.classList.toggle('tool-call-collapsed', !expanded);
+    const preview = turn.querySelector('.tool-call-preview');
+    const full = turn.querySelector('.tool-call-full');
+    if (preview) preview.classList.toggle('hidden', expanded);
+    if (full) full.classList.toggle('hidden', !expanded);
+  } else {
+    turn.classList.toggle('tool-result-expanded', expanded);
+    turn.classList.toggle('tool-result-collapsed', !expanded);
+    const result = turn.querySelector('.tool-result');
+    if (result) result.classList.toggle('hidden', !expanded);
+  }
+
+  turn.querySelectorAll(`.tool-section-toggle[data-tool-section="${section}"]`).forEach(btn => {
+    const isResult = section === 'result';
+    btn.textContent = isResult ? (expanded ? 'Hide result' : 'Show result') : (expanded ? 'Hide call' : 'Show call');
+    btn.setAttribute('aria-pressed', String(expanded));
+  });
+
+  const bubble = turn.querySelector('.chat-bubble[data-default-tool-section]');
+  if (bubble && bubble.dataset.defaultToolSection === section) {
+    bubble.setAttribute('aria-expanded', String(expanded));
+  }
+}
+function withStableToolScroll(turn, action) {
+  const drawer = document.getElementById('sessionDrawer');
+  const drawerScroll = drawer ? drawer.querySelector('.drawer-scroll') : null;
+  if (!turn || !drawerScroll) {
+    action();
+    return;
+  }
+  const before = turn.getBoundingClientRect().top;
+  action();
+  window.requestAnimationFrame(() => {
+    drawerScroll.scrollTop += turn.getBoundingClientRect().top - before;
+  });
+}
+function toggleToolSection(turnKey, section) {
+  if (!turnKey || !section) return;
+  const expandedSet = section === 'result' ? state.expandedToolResults : state.expandedToolCalls;
+  const expanded = !expandedSet.has(turnKey);
+  if (expanded) expandedSet.add(turnKey);
+  else expandedSet.delete(turnKey);
+  const turn = toolTurnElement(turnKey);
+  withStableToolScroll(turn, () => setToolSectionDom(turn, section, expanded));
+}
+function bindToolTurnToggles(activeSession) {
+  const drawer = document.getElementById('sessionDrawer');
+  if (!drawer || !activeSession) return;
+  drawer.querySelectorAll('.tool-section-toggle').forEach(btn => btn.onclick = event => {
+    event.stopPropagation();
+    toggleToolSection(btn.dataset.toolTurnKey, btn.dataset.toolSection);
+  });
+  drawer.querySelectorAll('.turn.tool .chat-bubble[data-default-tool-section]').forEach(bubble => {
+    bubble.onclick = event => {
+      if (event.target.closest('button, a')) return;
+      toggleToolSection(bubble.dataset.toolTurnKey, bubble.dataset.defaultToolSection);
+    };
+    bubble.onkeydown = event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggleToolSection(bubble.dataset.toolTurnKey, bubble.dataset.defaultToolSection);
+    };
+  });
+}
 function updateConversationRenderMode(activeSession) {
   const drawer = document.getElementById('sessionDrawer');
   const drawerScroll = drawer.querySelector('.drawer-scroll');
@@ -400,9 +544,11 @@ function updateConversationRenderMode(activeSession) {
   const progress = maxBefore ? drawerScroll.scrollTop / maxBefore : 0;
   const visible = Number(conversation.dataset.visible || conversationLimit(activeSession));
   const turns = (activeSession.conversation || []).slice(0, visible);
+  const key = sessionKey(activeSession);
 
   setMessageRenderButtons();
-  conversation.innerHTML = turns.map(turnHtml).join('');
+  conversation.innerHTML = turns.map((turn, index) => turnHtml(turn, index, key)).join('');
+  bindToolTurnToggles(activeSession);
 
   window.requestAnimationFrame(() => {
     const maxAfter = Math.max(0, drawerScroll.scrollHeight - drawerScroll.clientHeight);
@@ -423,9 +569,10 @@ function appendConversationTurns(activeSession) {
   if (!nextTurns.length) return;
 
   loadButton.disabled = true;
-  conversation.insertAdjacentHTML('beforeend', nextTurns.map(turnHtml).join(''));
+  conversation.insertAdjacentHTML('beforeend', nextTurns.map((turn, offset) => turnHtml(turn, current + offset, key)).join(''));
   conversation.dataset.visible = String(nextLimit);
   state.conversationLimits.set(key, nextLimit);
+  bindToolTurnToggles(activeSession);
 
   const remaining = Math.max(0, turns.length - nextLimit);
   const count = drawer.querySelector('.conversation-count');

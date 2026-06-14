@@ -56,7 +56,9 @@ Agent selection mirrors `ccusage`: omit the selector or use `all` for all detect
 
 Project documentation lives in [`docs/wiki/v0.0.1.md`](docs/wiki/v0.0.1.md).
 
-Latest v0.0.12 notes live in [`docs/wiki/v0.0.12.md`](docs/wiki/v0.0.12.md).
+Latest v0.0.13 notes live in [`docs/wiki/v0.0.13.md`](docs/wiki/v0.0.13.md).
+
+v0.0.12 notes live in [`docs/wiki/v0.0.12.md`](docs/wiki/v0.0.12.md).
 
 v0.0.11 notes live in [`docs/wiki/v0.0.11.md`](docs/wiki/v0.0.11.md).
 

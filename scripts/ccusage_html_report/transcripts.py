@@ -156,18 +156,22 @@ def add_conversation_turn(
     max_chars: int,
     *,
     include_snippet: bool = True,
+    extra: dict[str, Any] | None = None,
 ) -> str:
     raw_text = text.strip()
     if not raw_text or looks_like_context_noise(raw_text):
         return ""
-    conversation.append(
-        {
-            "role": role,
-            "text": raw_text,
-            "time": turn_time,
-            "chars": len(raw_text),
-        }
-    )
+    turn = {
+        "role": role,
+        "text": raw_text,
+        "time": turn_time,
+        "chars": len(raw_text),
+    }
+    if extra:
+        for key, value in extra.items():
+            if value not in (None, ""):
+                turn[key] = value
+    conversation.append(turn)
     if include_snippet and len(snippets) < max_snippets:
         snippets.append(
             {
@@ -217,7 +221,69 @@ def codex_session_path(session: dict[str, Any], sessions_root: Path) -> Path | N
     return None
 
 
-def codex_tool_event_text(payload: dict[str, Any]) -> str:
+def tool_call_identifier(payload: dict[str, Any]) -> str:
+    for key in ("call_id", "callId", "tool_call_id", "toolCallId", "id"):
+        value = payload.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def tool_result_text_from_mapping(value: Any) -> str:
+    if not isinstance(value, dict):
+        return extract_content_text(value).strip()
+
+    for key in (
+        "toolResult",
+        "toolResults",
+        "functionResponse",
+        "resultDisplay",
+        "output",
+        "result",
+        "response",
+        "content",
+        "error",
+    ):
+        if key not in value:
+            continue
+        text = extract_content_text(value.get(key)).strip()
+        if text:
+            return text
+    return ""
+
+
+def attach_tool_result(turn: dict[str, Any], result: str, result_time: str) -> bool:
+    result_text = result.strip()
+    if not result_text:
+        return False
+    existing = str(turn.get("toolResult") or "").strip()
+    combined = f"{existing}\n\n{result_text}" if existing else result_text
+    turn["toolResult"] = combined
+    turn["toolResultChars"] = len(combined)
+    if result_time:
+        turn["toolResultTime"] = result_time
+    return True
+
+
+def attach_tool_result_to_recent(
+    conversation: list[dict[str, Any]],
+    tool_turns_by_call_id: dict[str, dict[str, Any]],
+    call_id: str,
+    result: str,
+    result_time: str,
+) -> bool:
+    turn = tool_turns_by_call_id.get(call_id) if call_id else None
+    if not turn and call_id:
+        for candidate in reversed(conversation):
+            if candidate.get("role") == "tool" and str(candidate.get("toolCallId") or "") == call_id:
+                turn = candidate
+                break
+    if not turn and conversation and conversation[-1].get("role") == "tool":
+        turn = conversation[-1]
+    return attach_tool_result(turn, result, result_time) if turn else False
+
+
+def codex_tool_call_details(payload: dict[str, Any]) -> dict[str, str] | None:
     payload_type = str(payload.get("type") or "")
     if payload_type in ("function_call", "tool_call", "custom_tool_call"):
         name = str(payload.get("name") or payload.get("tool_name") or payload.get("recipient_name") or "tool")
@@ -236,8 +302,55 @@ def codex_tool_event_text(payload: dict[str, Any]) -> str:
         if not args and payload.get("arguments"):
             lines.append("Arguments:")
             lines.append(trim_multiline_text(str(payload.get("arguments")), 900))
-        return "\n".join(lines)
+        status = payload.get("status")
+        if status:
+            lines.append(f"Status: {status}")
+        return {
+            "summary": "\n".join(lines),
+            "name": name,
+            "call_id": tool_call_identifier(payload),
+            "result": tool_result_text_from_mapping(payload),
+        }
 
+    return None
+
+
+def codex_tool_result_details(payload: dict[str, Any]) -> dict[str, str] | None:
+    payload_type = str(payload.get("type") or "")
+    if payload_type not in ("function_call_output", "tool_call_output", "custom_tool_call_output"):
+        return None
+
+    result = tool_result_text_from_mapping(payload)
+    if not result:
+        remaining = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"type", "id", "call_id", "callId", "tool_call_id", "toolCallId"}
+        }
+        if remaining:
+            result = compact_json(remaining, 2000)
+    if not result:
+        return None
+    return {"call_id": tool_call_identifier(payload), "result": result}
+
+
+def codex_user_tool_result_text(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("Output:"):
+        return stripped[len("Output:") :].strip()
+
+    match = re.search(r"(?m)^Output:\s*", stripped)
+    if not match:
+        return ""
+
+    prefix = stripped[: match.start()].strip()
+    if not prefix:
+        return stripped[match.end() :].strip()
+
+    allowed_prefixes = ("Current topic:", "Topic summary:", "Strategic Intent:")
+    prefix_lines = [line.strip() for line in prefix.splitlines() if line.strip()]
+    if prefix_lines and all(line.startswith(allowed_prefixes) for line in prefix_lines):
+        return stripped[match.end() :].strip()
     return ""
 
 
@@ -251,6 +364,7 @@ def enrich_codex_session(
     title = ""
     snippets: list[dict[str, str]] = []
     conversation: list[dict[str, Any]] = []
+    tool_turns_by_call_id: dict[str, dict[str, Any]] = {}
     last_conversation_time: datetime | None = None
 
     if path and path.exists():
@@ -272,11 +386,22 @@ def enrich_codex_session(
                         role = payload.get("role")
                         if role not in ("user", "assistant"):
                             continue
+                        message_text = extract_content_text(payload.get("content"))
+                        if role == "user":
+                            tool_result = codex_user_tool_result_text(message_text)
+                            if tool_result and attach_tool_result_to_recent(
+                                conversation,
+                                tool_turns_by_call_id,
+                                "",
+                                tool_result,
+                                turn_time,
+                            ):
+                                continue
                         raw_text = add_conversation_turn(
                             conversation,
                             snippets,
                             str(role),
-                            extract_content_text(payload.get("content")),
+                            message_text,
                             turn_time,
                             max_snippets,
                             max_chars,
@@ -284,18 +409,54 @@ def enrich_codex_session(
                         if role == "user" and raw_text and not title:
                             title = trim_text(re.sub(r"^[#>\-\s]+", "", raw_text), 96)
                     else:
-                        tool_text = codex_tool_event_text(payload)
-                        if tool_text:
+                        tool_result = codex_tool_result_details(payload)
+                        if tool_result:
+                            if not attach_tool_result_to_recent(
+                                conversation,
+                                tool_turns_by_call_id,
+                                tool_result.get("call_id", ""),
+                                tool_result.get("result", ""),
+                                turn_time,
+                            ):
+                                add_conversation_turn(
+                                    conversation,
+                                    snippets,
+                                    "tool",
+                                    "Tool result",
+                                    turn_time,
+                                    max_snippets,
+                                    max_chars,
+                                    include_snippet=False,
+                                    extra={
+                                        "toolResult": tool_result.get("result", ""),
+                                        "toolResultChars": len(tool_result.get("result", "")),
+                                        "toolResultTime": turn_time,
+                                    },
+                                )
+                            continue
+
+                        tool_call = codex_tool_call_details(payload)
+                        if tool_call:
                             add_conversation_turn(
                                 conversation,
                                 snippets,
                                 "tool",
-                                tool_text,
+                                tool_call["summary"],
                                 turn_time,
                                 max_snippets,
                                 max_chars,
                                 include_snippet=False,
+                                extra={
+                                    "toolName": tool_call.get("name", ""),
+                                    "toolCallId": tool_call.get("call_id", ""),
+                                    "toolResult": tool_call.get("result", ""),
+                                    "toolResultChars": len(tool_call.get("result", "")),
+                                    "toolResultTime": turn_time if tool_call.get("result") else "",
+                                },
                             )
+                            call_id = tool_call.get("call_id", "")
+                            if call_id and conversation:
+                                tool_turns_by_call_id[call_id] = conversation[-1]
         except OSError:
             pass
 
@@ -467,8 +628,8 @@ def gemini_message_text(message: dict[str, Any]) -> str:
     return ""
 
 
-def gemini_tool_call_turns(message: dict[str, Any]) -> list[tuple[str, str]]:
-    turns: list[tuple[str, str]] = []
+def gemini_tool_call_turns(message: dict[str, Any]) -> list[dict[str, str]]:
+    turns: list[dict[str, str]] = []
     for call in message.get("toolCalls") or []:
         if not isinstance(call, dict):
             continue
@@ -484,7 +645,14 @@ def gemini_tool_call_turns(message: dict[str, Any]) -> list[tuple[str, str]]:
         status = call.get("status")
         if status:
             lines.append(f"Status: {status}")
-        turns.append(("\n".join(lines), str(call.get("timestamp") or message.get("timestamp") or "")))
+        turns.append(
+            {
+                "summary": "\n".join(lines),
+                "time": str(call.get("timestamp") or message.get("timestamp") or ""),
+                "name": name,
+                "result": tool_result_text_from_mapping(call),
+            }
+        )
     return turns
 
 
@@ -520,17 +688,24 @@ def enrich_gemini_session(
             )
             if role == "user" and raw_text and not title:
                 title = trim_text(re.sub(r"^[#>\-\s]+", "", raw_text), 96)
-            for tool_text, tool_time in gemini_tool_call_turns(message):
+            for tool_turn in gemini_tool_call_turns(message):
+                tool_time = tool_turn.get("time", "")
                 last_conversation_time = update_latest_datetime(last_conversation_time, tool_time)
                 add_conversation_turn(
                     conversation,
                     snippets,
                     "tool",
-                    tool_text,
+                    tool_turn.get("summary", ""),
                     tool_time,
                     max_snippets,
                     max_chars,
                     include_snippet=False,
+                    extra={
+                        "toolName": tool_turn.get("name", ""),
+                        "toolResult": tool_turn.get("result", ""),
+                        "toolResultChars": len(tool_turn.get("result", "")),
+                        "toolResultTime": tool_time if tool_turn.get("result") else "",
+                    },
                 )
 
     if not title:

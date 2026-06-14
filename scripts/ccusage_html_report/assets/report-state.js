@@ -31,6 +31,8 @@ const state = {
   activeSessionKey: null,
   conversationBatch: 24,
   conversationLimits: new Map(),
+  expandedToolCalls: new Set(),
+  expandedToolResults: new Set(),
   messageRenderMode: initialStoredValue('ccusage.messageRenderMode', 'raw') === 'markdown' ? 'markdown' : 'raw',
   drawerWidth: initialDrawerWidth()
 };
